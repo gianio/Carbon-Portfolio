@@ -93,18 +93,22 @@ if df:
                     broken_rules.append(f"No available volume for {category} in {year}.")
                     continue
 
-                priority_sum = category_projects['priority'].fillna(0).sum()
+                priority_sum = 0
+                has_priority_column = 'priority' in category_projects.columns
+                if has_priority_column:
+                    priority_sum = category_projects['priority'].fillna(0).sum()
+
                 num_projects = len(category_projects)
 
                 for _, row in category_projects.iterrows():
                     max_available = row.get(f"available volume {year_str}", 0)
-                    if 'priority' in row and pd.notna(row['priority']) and priority_sum > 0:
+                    target_volume = 0  # Initialize target_volume
+
+                    if has_priority_column and priority_sum > 0 and 'priority' in row and pd.notna(row['priority']):
                         priority_fraction = row['priority'] / priority_sum
                         target_volume = annual_volume * category_share * priority_fraction
                     elif num_projects > 0:
                         target_volume = annual_volume * category_share / num_projects
-                    else:
-                        target_volume = 0
 
                     vol = min(target_volume, max_available)
                     total_allocated += vol
