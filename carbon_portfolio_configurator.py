@@ -46,12 +46,22 @@ if df:
     transition_speed = st.slider("Transition Speed (1 = Slow, 10 = Fast)", 1, 10, 5)
     removal_preference = st.slider("Removal Preference (1 = Natural, 10 = Technical)", 1, 10, 5)
 
-    st.subheader("Step 2: Select Projects")
+    st.subheader("Step 2: Select and Prioritize Projects")
     project_names = data['project name'].unique().tolist()
     selected_projects = st.multiselect("Select projects to include in the portfolio:", project_names)
+    favorite_projects = st.multiselect("Select your favorite projects (will get a +10% priority boost):", selected_projects)
 
     if selected_projects:
         selected_df = data[data['project name'].isin(selected_projects)].copy()
+
+        # Apply favorite project boost
+        if favorite_projects:
+            selected_df['priority'] = selected_df.apply(
+                lambda row: row['priority'] + 10 if row['project name'] in favorite_projects and pd.notna(row['priority']) and row['priority'] < 100 else row['priority'],
+                axis=1
+            )
+            # Ensure priority doesn't exceed 100%
+            selected_df['priority'] = selected_df['priority'].clip(upper=100)
 
         types = ['technical removal', 'natural removal', 'reduction']
         project_types = {t: selected_df[selected_df['project type'] == t] for t in types}
@@ -95,31 +105,46 @@ if df:
 
                 allocated_category_volume = 0
 
-                priority_projects = category_projects[category_projects['priority'].notna()].copy()
-                remaining_projects = category_projects[category_projects['priority'].isna()].copy()
+                if 'priority' in category_projects.columns:
+                    priority_projects = category_projects[category_projects['priority'].notna()].copy()
+                    remaining_projects = category_projects[category_projects['priority'].isna()].copy()
 
-                # Allocate based on priority
-                for _, row in priority_projects.iterrows():
-                    priority = row['priority'] / 100.0  # Convert percentage to fraction
-                    target_volume = annual_volume * category_share * priority
-                    max_available = row.get(f"available volume {year_str}", 0)
-                    vol = min(target_volume, max_available)
-                    volumes[row['project name']] = {
-                        'volume': int(vol),
-                        'price': row.get(f'price {year_str}', 0),
-                        'type': category
-                    }
-                    allocated_category_volume += vol
+                    # Allocate based on priority
+                    for _, row in priority_projects.iterrows():
+                        priority = row['priority'] / 100.0  # Convert percentage to fraction
+                        target_volume = annual_volume * category_share * priority
+                        max_available = row.get(f"available volume {year_str}", 0)
+                        vol = min(target_volume, max_available)
+                        volumes[row['project name']] = {
+                            'volume': int(vol),
+                            'price': row.get(f'price {year_str}', 0),
+                            'type': category
+                        }
+                        allocated_category_volume += vol
 
-                # Allocate remaining volume equally among non-priority projects
-                num_remaining = len(remaining_projects)
-                if num_remaining > 0:
-                    remaining_category_volume = annual_volume * category_share - allocated_category_volume
-                    if remaining_category_volume > 0:
-                        share_per_remaining = remaining_category_volume / num_remaining
-                        for _, row in remaining_projects.iterrows():
+                    # Allocate remaining volume equally among non-priority projects
+                    num_remaining = len(remaining_projects)
+                    if num_remaining > 0:
+                        remaining_category_volume = annual_volume * category_share - allocated_category_volume
+                        if remaining_category_volume > 0:
+                            share_per_remaining = remaining_category_volume / num_remaining
+                            for _, row in remaining_projects.iterrows():
+                                max_available = row.get(f"available volume {year_str}", 0)
+                                vol = min(share_per_remaining, max_available)
+                                volumes[row['project name']] = {
+                                    'volume': int(vol),
+                                    'price': row.get(f'price {year_str}', 0),
+                                    'type': category
+                                }
+                                allocated_category_volume += vol
+                else:
+                    # If 'priority' column doesn't exist for this category, allocate equally
+                    num_projects = len(category_projects)
+                    if num_projects > 0:
+                        share_per_project = annual_volume * category_share / num_projects
+                        for _, row in category_projects.iterrows():
                             max_available = row.get(f"available volume {year_str}", 0)
-                            vol = min(share_per_remaining, max_available)
+                            vol = min(share_per_project, max_available)
                             volumes[row['project name']] = {
                                 'volume': int(vol),
                                 'price': row.get(f'price {year_str}', 0),
