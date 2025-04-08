@@ -93,10 +93,20 @@ if df:
                     broken_rules.append(f"No available volume for {category} in {year}.")
                     continue
 
-                share_per_project = category_share / len(category_projects)
-                for _, row in category_projects.iterrows():
+                num_projects = len(category_projects)
+                if num_projects > 1 and 'priority' in category_projects.columns:
+                    priorities = category_projects['priority'].fillna(0).values
+                    total_priority = np.sum(priorities)
+                    if total_priority > 0:
+                        share_per_project = priorities / total_priority * category_share
+                    else:
+                        share_per_project = np.full(num_projects, category_share / num_projects)
+                else:
+                    share_per_project = np.full(num_projects, category_share / num_projects)
+
+                for idx, row in category_projects.iterrows():
                     max_available = row.get(f"available volume {year_str}", 0)
-                    target_volume = annual_volume * share_per_project
+                    target_volume = annual_volume * share_per_project[idx]
                     vol = min(target_volume, max_available)
                     total_allocated += vol
                     key = row['project name']
@@ -154,7 +164,7 @@ if df:
         ax1.legend(loc='upper left')
 
         ax2 = ax1.twinx()
-        ax2.plot(x, avg_prices, marker='o', color=green_palette[0], label='Avg Price') # Use a green color for the line
+        ax2.plot(x, avg_prices, marker='o', color='black', label='Avg Price') # Use black for average price
         ax2.set_ylabel('Average Price')
         ax2.legend(loc='upper right')
 
@@ -185,64 +195,3 @@ if df:
                         'cost': info['volume'] * info['price']
                     })
             st.dataframe(pd.DataFrame(full_table))
-
-        if st.checkbox("Show Box Plots"):
-            # Assuming you have some numerical columns you want to visualize
-            numerical_cols = data.select_dtypes(include=np.number).columns.tolist()
-            # Filter out 'avg_price' if it's a numerical column to avoid redundancy
-            numerical_cols = [col for col in numerical_cols if col not in ['avg_price']]
-            selected_box_cols = st.multiselect("Select columns for box plots:", numerical_cols)
-
-            if selected_box_cols:
-                num_cols = len(selected_box_cols)
-                cols_per_row = 3  # Adjust as needed
-                num_rows = (num_cols + cols_per_row - 1) // cols_per_row
-                fig, axes = plt.subplots(num_rows, min(num_cols, cols_per_row), figsize=(15, 5 * num_rows))
-                axes = np.ravel(axes)  # Flatten axes array for easy indexing
-
-                for i, col in enumerate(selected_box_cols):
-                    bp = axes[i].boxplot(data[col], patch_artist=True)
-                    axes[i].set_title(col)
-
-                    # Customize the boxes for rounded edges
-                    for box in bp['boxes']:
-                        box.set_linewidth(1)
-                        box.set_edgecolor('black')
-                        box.set_facecolor('lightgreen')
-                        box.set_alpha(0.7)
-
-                        # Get the path and modify it for rounded edges
-                        path = box.get_path()
-                        verts = path.vertices
-                        codes = path.codes
-
-                        # Add rounded corners using PathPatch with round style
-                        import matplotlib.patches as patches
-                        rounded_rect = patches.PathPatch(
-                            verts,
-                            codes=codes,
-                            facecolor=box.get_facecolor(),
-                            edgecolor=box.get_edgecolor(),
-                            linewidth=box.get_linewidth(),
-                            alpha=box.get_alpha(),
-                            mutation_scale=1.0,
-                            capstyle='round',
-                            joinstyle='round'
-                        )
-                        axes[i].add_patch(rounded_rect)
-                        box.set_visible(False) # Hide the original box
-
-                    # Customize other elements (whiskers, caps, medians) if desired
-                    for whisker in bp['whiskers']:
-                        whisker.set(color='gray', linewidth=1)
-                    for cap in bp['caps']:
-                        cap.set(color='black', linewidth=1)
-                    for median in bp['medians']:
-                        median.set(color='red', linewidth=2)
-
-                # Hide any unused subplots
-                for j in range(i + 1, len(axes)):
-                    fig.delaxes(axes[j])
-
-                plt.tight_layout()
-                st.pyplot(fig)
