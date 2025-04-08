@@ -93,61 +93,31 @@ if df:
                     broken_rules.append(f"No available volume for {category} in {year}.")
                     continue
 
-                allocated_category_volume = 0
+                priority_sum = category_projects['priority'].fillna(0).sum()
+                num_projects = len(category_projects)
 
-                if 'priority' in category_projects.columns:
-                    priority_projects = category_projects[category_projects['priority'].notna()].copy()
-                    remaining_projects = category_projects[category_projects['priority'].isna()].copy()
+                for _, row in category_projects.iterrows():
+                    max_available = row.get(f"available volume {year_str}", 0)
+                    if 'priority' in row and pd.notna(row['priority']) and priority_sum > 0:
+                        priority_fraction = row['priority'] / priority_sum
+                        target_volume = annual_volume * category_share * priority_fraction
+                    elif num_projects > 0:
+                        target_volume = annual_volume * category_share / num_projects
+                    else:
+                        target_volume = 0
 
-                    # Allocate based on priority
-                    for _, row in priority_projects.iterrows():
-                        priority = row['priority'] / 100.0  # Convert percentage to fraction
-                        target_volume = annual_volume * category_share * priority
-                        max_available = row.get(f"available volume {year_str}", 0)
-                        vol = min(target_volume, max_available)
-                        volumes[row['project name']] = {
-                            'volume': int(vol),
-                            'price': row.get(f'price {year_str}', 0),
-                            'type': category
-                        }
-                        allocated_category_volume += vol
-
-                    # Allocate remaining volume equally among non-priority projects
-                    num_remaining = len(remaining_projects)
-                    if num_remaining > 0:
-                        remaining_category_volume = annual_volume * category_share - allocated_category_volume
-                        if remaining_category_volume > 0:
-                            share_per_remaining = remaining_category_volume / num_remaining
-                            for _, row in remaining_projects.iterrows():
-                                max_available = row.get(f"available volume {year_str}", 0)
-                                vol = min(share_per_remaining, max_available)
-                                volumes[row['project name']] = {
-                                    'volume': int(vol),
-                                    'price': row.get(f'price {year_str}', 0),
-                                    'type': category
-                                }
-                                allocated_category_volume += vol
-                else:
-                    # If 'priority' column doesn't exist, allocate equally
-                    num_projects = len(category_projects)
-                    if num_projects > 0:
-                        share_per_project = annual_volume * category_share / num_projects
-                        for _, row in category_projects.iterrows():
-                            max_available = row.get(f"available volume {year_str}", 0)
-                            vol = min(share_per_project, max_available)
-                            volumes[row['project name']] = {
-                                'volume': int(vol),
-                                'price': row.get(f'price {year_str}', 0),
-                                'type': category
-                            }
-                            allocated_category_volume += vol
-
-                total_allocated += allocated_category_volume
+                    vol = min(target_volume, max_available)
+                    total_allocated += vol
+                    volumes[row['project name']] = {
+                        'volume': int(vol),
+                        'price': row.get(f'price {year_str}', 0),
+                        'type': category
+                    }
 
             if total_allocated > 0:
                 scale_factor = annual_volume / total_allocated
                 for v in volumes.values():
-                    v['volume'] *= scale_factor
+                    v['volume'] = int(v['volume'] * scale_factor)
             else:
                 broken_rules.append(f"No available projects in {year}, cannot allocate volume.")
 
