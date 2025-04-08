@@ -3,7 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # For potentially more appealing styles
-from io import StringIO
 
 # Set Streamlit page config with light green background via HTML/CSS
 st.markdown("""
@@ -85,7 +84,6 @@ if df:
 
         portfolio = {year: {} for year in selected_years}
         broken_rules = []
-        yearly_costs = {}
 
         for year_idx, year in enumerate(selected_years):
             year_str = f"{year}"
@@ -95,7 +93,6 @@ if df:
 
             volumes = {}
             total_allocated = 0
-            total_cost_year = 0
 
             for category in types:
                 if category == 'reduction':
@@ -165,12 +162,10 @@ if df:
                 scale_factor = annual_volume / total_allocated
                 for v in volumes.values():
                     v['volume'] = int(v['volume'] * scale_factor)
-                    total_cost_year += v['volume'] * v['price']
             else:
                 broken_rules.append(f"No available projects in {year}, cannot allocate volume.")
 
             portfolio[year] = volumes
-            yearly_costs[year] = total_cost_year
 
         composition_by_type = {t: [] for t in types}
         avg_prices = []
@@ -224,10 +219,6 @@ if df:
 
         st.markdown(f"**Achieved Removal % in {end_year}: {achieved_removal * 100:.2f}%**")
 
-        st.subheader("Yearly Costs")
-        yearly_costs_df = pd.DataFrame(list(yearly_costs.items()), columns=['Year', 'Total Cost'])
-        st.dataframe(yearly_costs_df)
-
         if broken_rules:
             st.warning("One or more constraints could not be fully satisfied:")
             for msg in broken_rules:
@@ -245,15 +236,4 @@ if df:
                         'price': info['price'],
                         'cost': info['volume'] * info['price']
                     })
-            allocations_df = pd.DataFrame(full_table)
-            st.dataframe(allocations_df)
-
-            # Download Button
-            csv_buffer = StringIO()
-            allocations_df.to_csv(csv_buffer, index=False)
-            st.download_button(
-                label="Download Project Allocations as CSV",
-                data=csv_buffer.getvalue(),
-                file_name="project_allocations.csv",
-                mime="text/csv",
-            )
+            st.dataframe(pd.DataFrame(full_table))
