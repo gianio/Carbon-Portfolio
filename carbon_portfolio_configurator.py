@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 # Set Streamlit page config with light green background via HTML/CSS
 st.markdown("""
@@ -132,6 +133,8 @@ if df:
 
         st.subheader("Portfolio Composition & Price Over Time")
         fig, ax1 = plt.subplots(figsize=(10, 6))
+        sns.set_theme(style="whitegrid")  # Apply a clean whitegrid style
+        green_palette = sns.color_palette("light:#558B2F", n_colors=3) # Define a green palette
 
         bar_width = 0.6
         x = np.arange(len(selected_years))
@@ -140,9 +143,9 @@ if df:
         nat = composition_by_type['natural removal']
         red = composition_by_type['reduction']
 
-        ax1.bar(x, tech, bar_width, label='Technical Removal')
-        ax1.bar(x, nat, bar_width, bottom=tech, label='Natural Removal')
-        ax1.bar(x, red, bar_width, bottom=np.array(tech) + np.array(nat), label='Reduction')
+        ax1.bar(x, tech, bar_width, label='Technical Removal', color=green_palette[0])
+        ax1.bar(x, nat, bar_width, bottom=tech, label='Natural Removal', color=green_palette[1])
+        ax1.bar(x, red, bar_width, bottom=np.array(tech) + np.array(nat), label='Reduction', color=green_palette[2])
 
         ax1.set_xlabel('Year')
         ax1.set_ylabel('Volume')
@@ -151,11 +154,12 @@ if df:
         ax1.legend(loc='upper left')
 
         ax2 = ax1.twinx()
-        ax2.plot(x, avg_prices, marker='o', color='black', label='Avg Price')
+        ax2.plot(x, avg_prices, marker='o', color=green_palette[0], label='Avg Price') # Use a green color for the line
         ax2.set_ylabel('Average Price')
         ax2.legend(loc='upper right')
 
         st.pyplot(fig)
+
 
         final_tech = composition_by_type['technical removal'][-1]
         final_nat = composition_by_type['natural removal'][-1]
