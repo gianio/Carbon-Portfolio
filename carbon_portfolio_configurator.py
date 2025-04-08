@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns  # For potentially more appealing styles
+from io import StringIO
 
 # Set Streamlit page config with light green background via HTML/CSS
 st.markdown("""
@@ -39,8 +40,12 @@ if df:
 
     st.subheader("Step 1: Define Portfolio Settings")
     annual_volumes = {}
+    volume_data = []
     for year in selected_years:
-        annual_volumes[year] = st.number_input(f"Annual purchase volume for {year}:", min_value=0, step=100, value=1000)
+        volume_data.append({"year": year, "volume": 1000})  # Default volume
+    volumes_df = pd.DataFrame(volume_data)
+    edited_volumes_df = st.data_editor(volumes_df, num_rows="dynamic", column_config={"year": st.column_config.Column(disabled=True)})
+    annual_volumes = edited_volumes_df.set_index('year')['volume'].to_dict()
 
     removal_target = st.slider(f"Target total removal % for year {end_year}", 0, 100, 80) / 100
     transition_speed = st.slider("Transition Speed (1 = Slow, 10 = Fast)", 1, 10, 5)
@@ -80,15 +85,17 @@ if df:
 
         portfolio = {year: {} for year in selected_years}
         broken_rules = []
+        yearly_costs = {}
 
         for year_idx, year in enumerate(selected_years):
             year_str = f"{year}"
             removal_share = removal_percentages[year_idx]
             reduction_share = 1 - removal_share
-            annual_volume = annual_volumes[year]
+            annual_volume = annual_volumes.get(year, 0)
 
             volumes = {}
             total_allocated = 0
+            total_cost_year = 0
 
             for category in types:
                 if category == 'reduction':
@@ -158,10 +165,12 @@ if df:
                 scale_factor = annual_volume / total_allocated
                 for v in volumes.values():
                     v['volume'] = int(v['volume'] * scale_factor)
+                    total_cost_year += v['volume'] * v['price']
             else:
                 broken_rules.append(f"No available projects in {year}, cannot allocate volume.")
 
             portfolio[year] = volumes
+            yearly_costs[year] = total_cost_year
 
         composition_by_type = {t: [] for t in types}
         avg_prices = []
@@ -215,6 +224,10 @@ if df:
 
         st.markdown(f"**Achieved Removal % in {end_year}: {achieved_removal * 100:.2f}%**")
 
+        st.subheader("Yearly Costs")
+        yearly_costs_df = pd.DataFrame(list(yearly_costs.items()), columns=['Year', 'Total Cost'])
+        st.dataframe(yearly_costs_df)
+
         if broken_rules:
             st.warning("One or more constraints could not be fully satisfied:")
             for msg in broken_rules:
@@ -232,4 +245,15 @@ if df:
                         'price': info['price'],
                         'cost': info['volume'] * info['price']
                     })
-            st.dataframe(pd.DataFrame(full_table))
+            allocations_df = pd.DataFrame(full_table)
+            st.dataframe(allocations_df)
+
+            # Download Button
+            csv_buffer = StringIO()
+            allocations_df.to_csv(csv_buffer, index=False)
+            st.download_button(
+                label="Download Project Allocations as CSV",
+                data=csv_buffer.getvalue(),
+                file_name="project_allocations.csv",
+                mime="text/csv",
+            )
