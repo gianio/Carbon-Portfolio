@@ -104,6 +104,9 @@ if df:
                 else:
                     share_per_project = np.full(num_projects, category_share / num_projects)
 
+                # Reset index of category_projects to ensure alignment
+                category_projects = category_projects.reset_index(drop=True)
+
                 for idx, row in category_projects.iterrows():
                     max_available = row.get(f"available volume {year_str}", 0)
                     target_volume = annual_volume * share_per_project[idx]
