@@ -38,9 +38,11 @@ if df:
         st.dataframe(overview[['project name', 'project type', 'avg_price']].drop_duplicates())
 
     st.subheader("Step 1: Define Portfolio Settings")
-    annual_volumes = {}
+    annual_volumes_data = []
     for year in selected_years:
-        annual_volumes[year] = st.number_input(f"Annual purchase volume for {year}:", min_value=0, step=100, value=1000)
+        volume = st.number_input(f"Volume for {year}", min_value=0, step=100, value=1000, key=f"volume_{year}")
+        annual_volumes_data.append({'year': year, 'volume': volume})
+    annual_volumes_df = pd.DataFrame(annual_volumes_data).set_index('year')['volume'].to_dict()
 
     removal_target = st.slider(f"Target total removal % for year {end_year}", 0, 100, 80) / 100
     transition_speed = st.slider("Transition Speed (1 = Slow, 10 = Fast)", 1, 10, 5)
@@ -85,7 +87,7 @@ if df:
             year_str = f"{year}"
             removal_share = removal_percentages[year_idx]
             reduction_share = 1 - removal_share
-            annual_volume = annual_volumes[year]
+            annual_volume = annual_volumes_df.get(year, 0)  # Get volume from DataFrame
 
             volumes = {}
             total_allocated = 0
@@ -167,7 +169,7 @@ if df:
         avg_prices = []
 
         for year in selected_years:
-            annual_volume = annual_volumes[year]
+            annual_volume = annual_volumes_df.get(year, 0)
             totals = {t: 0 for t in types}
             total_cost = 0
             for data in portfolio[year].values():
