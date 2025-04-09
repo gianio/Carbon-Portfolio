@@ -607,25 +607,45 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart (Project Type Volume -> Project Volume) ---
-        st.subheader("Portfolio Composition by Project Type and Project (Total Volume)")
+# --- Nested Pie Chart (Project Type -> Project) - Alternative Sunburst Structure ---
+        st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Alternative")
         if not portfolio_df.empty:
             # Aggregate total volume per project
-            project_total_volume = portfolio_df.groupby(['project name', 'type'])['volume'].sum().reset_index()
+            project_total_volume = portfolio_df.groupby(['type', 'project name'])['volume'].sum().reset_index()
             project_total_volume = project_total_volume.rename(columns={'volume': 'project_volume'})
 
             # Aggregate total volume per project type
             type_total_volume = project_total_volume.groupby('type')['project_volume'].sum().reset_index()
             type_total_volume = type_total_volume.rename(columns={'project_volume': 'type_volume'})
 
-            # Merge the aggregated data
-            merged_df = pd.merge(project_total_volume, type_total_volume, on='type')
+            # Create lists for the Sunburst chart
+            labels_sunburst = ['Portfolio'] + type_total_volume['type'].tolist() + project_total_volume['project name'].tolist()
+            parents_sunburst = [''] * (len(type_total_volume) + 1) + project_total_volume['type'].tolist()
+            values_sunburst = [project_total_volume['project_volume'].sum()] + type_total_volume['type_volume'].tolist() + project_total_volume['project_volume'].tolist()
 
-            # Create the Sunburst chart for the nested structure
+            st.subheader("Debugging Sunburst Data (Alternative)")
+            st.write("Labels:", labels_sunburst[:10])
+            st.write("Parents:", parents_sunburst[:10])
+            st.write("Values:", values_sunburst[:10])
+            st.write("Length of Labels:", len(labels_sunburst))
+            st.write("Length of Parents:", len(parents_sunburst))
+            st.write("Length of Values:", len(values_sunburst))
+
+            # Length Consistency Check
+            if not (len(labels_sunburst) == len(parents_sunburst) == len(values_sunburst)):
+                st.error("Lengths of labels, parents, and values are inconsistent!")
+
+            # Data Type Check for Values
+            if values_sunburst and not all(isinstance(v, (int, float)) for v in values_sunburst):
+                st.error("values_sunburst contains non-numeric data!")
+                for i, v in enumerate(values_sunburst):
+                    if not isinstance(v, (int, float)):
+                        st.write(f"Index {i}: {v} (type: {type(v)})")
+
             fig_nested_volume = go.Figure(data=[go.Sunburst(
-                labels=merged_df['project name'],
-                parents=merged_df['type'],
-                values=merged_df['project_volume'],
+                labels=labels_sunburst,
+                parents=parents_sunburst,
+                values=values_sunburst,
                 branchvalues="total",
                 outsidetextinfo='percent',
                 insidetextorientation='radial',
@@ -635,7 +655,7 @@ if df_upload:
             fig_nested_volume.update_layout(margin=dict(t=0, l=0, r=0, b=0))
             st.plotly_chart(fig_nested_volume, use_container_width=True)
 
-            st.caption("Nested pie chart showing total allocated volume. Inner segments represent projects, and outer segments represent their project types (size based on total volume).")
+            st.caption("Nested pie chart showing total allocated volume. Outer segments represent project types, and inner segments represent individual projects.")
 
         else:
             st.info("No projects allocated to display the nested volume chart.")
