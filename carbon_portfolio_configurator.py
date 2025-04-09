@@ -7,7 +7,7 @@ import numpy as np # Added for potential NaN checks if needed
 # --- Define a nice green color palette ---
 primary_green = "#8BC34A" # Light Green
 secondary_green = "#689F38" # Medium Green
-background_green = "#F1F8E9" # Very Light Green
+background_green = "#DCF0DC" # Very Light Green
 text_green = "#33691E" # Dark Green
 accent_green = "#AED581" # Lime Green
 
