@@ -576,7 +576,53 @@ if df_upload:
         else:
              st.info(f"No data allocated for the final year ({end_year}).")
 
+        # --- Total Portfolio Composition Pie Chart ---
+        st.subheader("Total Portfolio Composition")
+        if portfolio_data_list:
+            total_portfolio_df = pd.DataFrame(portfolio_data_list)
+            type_volume = total_portfolio_df.groupby('type')['volume'].sum().reset_index()
+            project_type_map = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().unstack(fill_value=0)
 
+            fig_pie = go.Figure(data=[go.Pie(labels=type_volume['type'], values=type_volume['volume'],
+                                             hole=.3, pull=[0.03] * len(type_volume))])
+
+            fig_pie.update_traces(hoverinfo='label+percent', textinfo='value', textfont_size=20,
+                                 marker=dict(line=dict(color='#000000', width=0.5)))
+            fig_pie.update_layout(title_text="Total Portfolio Composition by Type", title_x=0.5)
+
+            # Second layer (project names)
+            for i, project_type in enumerate(type_volume['type']):
+                project_data = project_type_map.loc[project_type]
+                project_names = project_data[project_data > 0].index.tolist()
+                project_volumes = project_data[project_data > 0].values.tolist()
+
+                # Calculate angles for the sub-pies
+                total_type_volume = type_volume['volume'].iloc[i]
+                if total_type_volume > 0:
+                    sub_pie_values = [vol / total_type_volume for vol in project_volumes]
+                    # Add a small radial offset for better visibility
+                    radii = [0.7] * len(project_names) # Adjust as needed
+
+                    fig_pie.add_trace(go.Pie(labels=project_names, values=sub_pie_values,
+                                             hole=.6, direction='clockwise',
+                                             domain=dict(x=[0, 1], y=[0, 1]),
+                                             showlegend=False,
+                                             textinfo='none',
+                                             title=f"<b>{project_type.capitalize()}</b>",
+                                             titleposition="middle center",
+                                             titlefont_size=16,
+                                             marker=dict(line=dict(color='#000000', width=0.3)),
+                                             textfont_size=12,
+                                             rotation=fig_pie.data[0].theta[0] if i > 0 else 0 # Basic attempt to align - might need more sophisticated logic
+                                            ))
+
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("No projects allocated to display portfolio composition.")
+
+        st.subheader("Portfolio Composition & Price Over Time")
+
+        
         st.subheader("Yearly Summary")
         summary_display_df = summary_df.copy()
         # Standardize column names before display
