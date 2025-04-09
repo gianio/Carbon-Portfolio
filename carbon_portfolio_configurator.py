@@ -6,39 +6,137 @@ import numpy as np # Added for potential NaN checks if needed
 
 # --- Streamlit App Configuration ---
 st.set_page_config(layout="wide") # Optional: Use wider layout
-st.markdown("""
+st.markdown(f"""
     <style>
-    body {
-        background-color: #A0C7DC; /* Lighter blue background */
-        font-family: Calibri, sans-serif; /* Default font for the body */
-        font-size: 16px; /* Default font size for the body */
-    }
-    .stApp {
-        background-color: #A0C7DC;
-    }
-    /* Add some padding below the title */
-    .stApp > header {
-        margin-bottom: 10px;
-    }
-    /* Style subheaders */
-    h2 {
-        border-bottom: 2px solid #AED581; /* Green underline for subheaders */
-        padding-bottom: 5px;
-        margin-top: 20px;
-        font-family: Calibri, sans-serif; /* Font for subheaders */
-        font-size: 24px; /* Font size for subheaders */
-    }
-    p {
-        font-family: Arial, sans-serif; /* Example: Different font for paragraphs */
-        font-size: 20px; /* Example: Different size for paragraphs */
-        line-height: 1.6; /* Optional: Improve readability */
-    }
-    div {
-        font-family: Arial, sans-serif; /* Apply to divs as well if they contain text */
-    }
+    body {{
+        background-color: {background_green};
+        font-family: Calibri, sans-serif;
+        font-size: 20.8px; /* 16px * 1.3 */
+        color: {text_green};
+    }}
+    .stApp {{
+        background-color: {background_green};
+    }}
+    .stApp > header {{
+        margin-bottom: 13px; /* 10px * 1.3 */
+    }}
+    h1 {{
+        color: {secondary_green};
+        font-family: Calibri, sans-serif;
+        font-size: 39px; /* 30px * 1.3 */
+    }}
+    h2 {{
+        border-bottom: 2.6px solid {accent_green}; /* 2px * 1.3 */
+        padding-bottom: 6.5px; /* 5px * 1.3 */
+        margin-top: 26px; /* 20px * 1.3 */
+        font-family: Calibri, sans-serif;
+        font-size: 31.2px; /* 24px * 1.3 */
+        color: {secondary_green};
+    }}
+    h3 {{
+        font-family: Calibri, sans-serif;
+        font-size: 26px; /* 20px * 1.3 */
+        color: {secondary_green};
+    }}
+    p, div, stText, stMarkdown, stCaption, stNumberInput label, stSlider label, stFileUploader label, stMultiSelect label, stRadio label, stCheckbox label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important; /* 16px * 1.3 */
+        color: {text_green} !important;
+    }}
+    .streamlit-expander {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+    }}
+    .streamlit-expander-content {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+    }}
+    .stButton > button {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {secondary_green} !important;
+        background-color: {background_green} !important;
+        &:hover {{
+            background-color: {primary_green} !important;
+            color: white !important;
+        }}
+    }}
+    .stSlider > div[data-baseweb="slider"] > div[role="slider"]::before {{
+        background-color: {primary_green} !important;
+    }}
+    .stSlider > div[data-baseweb="slider"] > div[role="slider"] > span {{
+        background-color: {secondary_green} !important;
+        border-color: {secondary_green} !important;
+    }}
+    .stNumberInput > div > div > input {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+    }}
+    .stSelectbox > div > div > div > button {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
+    }}
+    .stMultiSelect > div > div > div > button {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
+    }}
+    .stRadio > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+    }}
+    .stCheckbox > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+    }}
+    .stFileUploader > div > div:first-child > div:first-child > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
+    }}
+    .stDataFrame {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+    }}
+    .stDataFrame tr th {{
+        background-color: {accent_green} !important;
+        color: {text_green} !important;
+    }}
+    .stMetric {{
+        background-color: {background_green} !important;
+        border: 1px solid {accent_green} !important;
+        padding: 15px !important;
+        border-radius: 5px !important;
+    }}
+    .stMetricLabel {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {secondary_green} !important;
+    }}
+    .stMetricValue {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 26px !important;
+        color: {text_green} !important;
+    }}
     </style>
 """, unsafe_allow_html=True)
-
 
 st.title("🌱 Multi-Year Carbon Portfolio Builder")
 
