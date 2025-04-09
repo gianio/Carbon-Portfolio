@@ -607,29 +607,39 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-
-        # --- Single Pie Chart (Total Volume per Project) ---
-        st.subheader("Total Portfolio Volume per Project (Across All Years)")
+# --- Nested Pie Chart (Project Type Volume -> Project Volume) ---
+        st.subheader("Portfolio Composition by Project Type and Project (Total Volume)")
         if not portfolio_df.empty:
             # Aggregate total volume per project
-            project_total_volume = portfolio_df.groupby('project name')['volume'].sum().reset_index()
+            project_total_volume = portfolio_df.groupby(['project name', 'type'])['volume'].sum().reset_index()
+            project_total_volume = project_total_volume.rename(columns={'volume': 'project_volume'})
 
-            fig_total_volume_pie = go.Figure(data=[go.Pie(
-                labels=project_total_volume['project name'],
-                values=project_total_volume['volume'],
-                hoverinfo='label+percent+value',
-                textinfo='value',
+            # Aggregate total volume per project type
+            type_total_volume = project_total_volume.groupby('type')['project_volume'].sum().reset_index()
+            type_total_volume = type_total_volume.rename(columns={'project_volume': 'type_volume'})
+
+            # Merge the aggregated data
+            merged_df = pd.merge(project_total_volume, type_total_volume, on='type')
+
+            # Create the Sunburst chart for the nested structure
+            fig_nested_volume = go.Figure(data=[go.Sunburst(
+                labels=merged_df['project name'],
+                parents=merged_df['type'],
+                values=merged_df['project_volume'],
+                branchvalues="total",
+                outsidetextinfo='percent',
                 insidetextorientation='radial',
-                marker=dict(line=dict(color='white', width=0.5))
+                marker=dict(line=dict(color='white', width=0.5)),
             )])
 
-            fig_total_volume_pie.update_layout(margin=dict(t=0, l=0, r=0, b=0))
-            st.plotly_chart(fig_total_volume_pie, use_container_width=True)
+            fig_nested_volume.update_layout(margin=dict(t=0, l=0, r=0, b=0))
+            st.plotly_chart(fig_nested_volume, use_container_width=True)
 
-            st.caption("Pie chart showing the total allocated volume for each project across all selected years.")
+            st.caption("Nested pie chart showing total allocated volume. Inner segments represent projects, and outer segments represent their project types (size based on total volume).")
 
         else:
-            st.info("No projects allocated to display the total volume per project chart.")
+            st.info("No projects allocated to display the nested volume chart.")
+    
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
         if st.checkbox("Show raw project allocations by year", key="show_raw"):
