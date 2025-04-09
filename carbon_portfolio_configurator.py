@@ -137,7 +137,7 @@ if df:
             # --- Allocation Loop for Each Project Type ---
             for category in types:
                 # Determine the target share for the current category
-                category_target = annual_limit * category_share
+                category_target = annual_limit * category_split.get(category, 0)
 
                 # Get available projects for the current category and year, sorted by price for budget constraint
                 available_projects = project_types[category].copy()
