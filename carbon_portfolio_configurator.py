@@ -607,7 +607,7 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-        # --- Nested Pie Chart for Final Year Composition ---
+# --- Nested Pie Chart for Final Year Composition ---
         st.subheader(f"Portfolio Composition in {end_year}")
         final_year_data = portfolio_df[portfolio_df['year'] == end_year]
 
@@ -621,7 +621,8 @@ if df_upload:
                                              pull=[0.05] * len(type_summary),
                                              marker_colors=[color_map.get(t, default_color) for t in type_summary['type']],
                                              textinfo='percent+label',
-                                             insidetextorientation='radial'
+                                             insidetextorientation='radial',
+                                             domain=dict(column=0)
                                             )])
 
             # Add second pie chart for projects within each type
@@ -631,16 +632,16 @@ if df_upload:
                     fig_pie.add_trace(go.Pie(labels=subset['project name'],
                                              values=subset['volume'],
                                              name=type_name.capitalize(),
-                                             domain=dict(column=0),
                                              hole=.6,
                                              textinfo='percent',
                                              textposition='outside',
                                              showlegend=False,
-                                             marker_colors=[color_map.get(type_name, default_color)] * len(subset) # Use consistent color
+                                             marker_colors=[color_map.get(type_name, default_color)] * len(subset), # Use consistent color
+                                             domain=dict(column=0)
                                             ))
 
-            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition by Type and Project in {end_year}",
-                                  grid=dict(rows=1, columns=1), # Adjust rows/columns if showing multiple years
+            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition by Type (Outer) and Project (Inner) in {end_year}",
+                                  grid=dict(rows=1, columns=1),
                                   legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
                                   template="plotly_white")
             st.plotly_chart(fig_pie, use_container_width=True)
