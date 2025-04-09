@@ -612,6 +612,7 @@ if df_upload:
         final_year_data = portfolio_df[portfolio_df['year'] == end_year]
 
         if not final_year_data.empty:
+            total_volume = final_year_data['volume'].sum()
             type_summary = final_year_data.groupby('type')['volume'].sum().reset_index()
             project_summary = final_year_data.groupby(['type', 'project name'])['volume'].sum().reset_index()
 
@@ -622,7 +623,8 @@ if df_upload:
                                              marker_colors=[color_map.get(t, default_color) for t in type_summary['type']],
                                              textinfo='percent+label',
                                              insidetextorientation='radial',
-                                             domain=dict(column=0)
+                                             domain={'x': [0, 1], 'y': [0, 1]},
+                                             name='Project Type'
                                             )])
 
             # Add second pie chart for projects within each type
@@ -637,11 +639,11 @@ if df_upload:
                                              textposition='outside',
                                              showlegend=False,
                                              marker_colors=[color_map.get(type_name, default_color)] * len(subset), # Use consistent color
-                                             domain=dict(column=0)
+                                             domain={'x': [0, 1], 'y': [0, 1]},
+                                             parents=[type_name.capitalize()] * len(subset) # Define parent for nesting
                                             ))
 
-            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition by Type (Outer) and Project (Inner) in {end_year}",
-                                  grid=dict(rows=1, columns=1),
+            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition in {end_year} (Outer: Type, Inner: Project)",
                                   legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
                                   template="plotly_white")
             st.plotly_chart(fig_pie, use_container_width=True)
