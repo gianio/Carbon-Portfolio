@@ -607,48 +607,50 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart for Final Year Composition ---
-        st.subheader(f"Portfolio Composition in {end_year}")
-        final_year_data = portfolio_df[portfolio_df['year'] == end_year]
+            # --- Nested Pie Chart ---
+        st.subheader("Annual Portfolio Composition")
+        for year in selected_years:
+            year_data = portfolio_df[portfolio_df['year'] == year]
+            if not year_data.empty:
+                fig_pie = go.Figure(data=[go.Pie(
+                    labels=year_data['project name'],
+                    values=year_data['volume'],
+                    hoverinfo='label+percent',
+                    textinfo='value',
+                    insidetextorientation='radial'
+                )])
+                st.markdown(f"**{year} Portfolio Composition (by Volume)**")
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info(f"No projects allocated for the year {year} to display a pie chart.")
 
-        if not final_year_data.empty:
-            total_volume = final_year_data['volume'].sum()
-            type_summary = final_year_data.groupby('type')['volume'].sum().reset_index()
-            project_summary = final_year_data.groupby(['type', 'project name'])['volume'].sum().reset_index()
+        # --- Alternative Nested Pie Chart (Aggregated by Type) ---
+        st.subheader("Annual Portfolio Composition by Type")
+        for year in selected_years:
+            year_data = portfolio_df[portfolio_df['year'] == year]
+            if not year_data.empty:
+                type_volume = year_data.groupby('type')['volume'].sum().reset_index()
 
-            fig_pie = go.Figure(data=[go.Pie(labels=type_summary['type'].str.capitalize(),
-                                             values=type_summary['volume'],
-                                             hole=.3,
-                                             pull=[0.05] * len(type_summary),
-                                             marker_colors=[color_map.get(t, default_color) for t in type_summary['type']],
-                                             textinfo='percent+label',
-                                             insidetextorientation='radial',
-                                             domain={'x': [0, 1], 'y': [0, 1]},
-                                             name='Project Type'
-                                            )])
+                # Create a mapping for consistent colors
+                color_map_pie = {
+                    'technical removal': '#64B5F6',
+                    'natural removal': '#81C784',
+                    'reduction': '#B0BEC5',
+                }
+                colors = [color_map_pie.get(t, '#D3D3D3') for t in type_volume['type']]
 
-            # Add second pie chart for projects within each type
-            for i, type_name in enumerate(type_summary['type']):
-                subset = project_summary[project_summary['type'] == type_name]
-                if not subset.empty:
-                    fig_pie.add_trace(go.Pie(labels=subset['project name'],
-                                             values=subset['volume'],
-                                             name=type_name.capitalize(),
-                                             hole=.6,
-                                             textinfo='percent',
-                                             textposition='outside',
-                                             showlegend=False,
-                                             marker_colors=[color_map.get(type_name, default_color)] * len(subset), # Use consistent color
-                                             domain={'x': [0, 1], 'y': [0, 1]},
-                                             parents=[type_name.capitalize()] * len(subset) # Define parent for nesting
-                                            ))
-
-            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition in {end_year} (Outer: Type, Inner: Project)",
-                                  legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
-                                  template="plotly_white")
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info(f"No projects were allocated for the year {end_year}, so no composition to display.")
+                fig_nested_pie = go.Figure(data=[go.Pie(
+                    labels=type_volume['type'],
+                    values=type_volume['volume'],
+                    marker_colors=colors,
+                    hoverinfo='label+percent',
+                    textinfo='value',
+                    insidetextorientation='radial'
+                )])
+                st.markdown(f"**{year} Portfolio Composition (by Volume - Aggregated by Type)**")
+                st.plotly_chart(fig_nested_pie, use_container_width=True)
+            else:
+                st.info(f"No projects allocated for the year {year} to display a type-aggregated pie chart.")
         
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
