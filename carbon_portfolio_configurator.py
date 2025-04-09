@@ -576,50 +576,64 @@ if df_upload:
         else:
              st.info(f"No data allocated for the final year ({end_year}).")
 
-    # --- Total Portfolio Composition Pie Chart ---
         # --- Total Portfolio Composition Pie Chart ---
         st.subheader("Total Portfolio Composition")
         if portfolio_data_list:
             total_portfolio_df = pd.DataFrame(portfolio_data_list)
-            type_volume = total_portfolio_df.groupby('type')['volume'].sum().reset_index()
-            project_type_map = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().unstack(fill_value=0)
 
-            fig_pie = go.Figure(data=[go.Pie(labels=type_volume['type'], values=type_volume['volume'],
-                                             hole=.3, pull=[0.03] * len(type_volume),
-                                             hoverinfo='label+percent', textinfo='value', textfont_size=20,
+            # Group by project type and sum volume
+            type_volume = total_portfolio_df.groupby('type')['volume'].sum().reset_index()
+
+            # Group by project type and project name, then sum volume and unstack
+            project_type_volume = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().unstack(fill_value=0)
+
+            # Create the outer pie chart (by project type)
+            fig_pie = go.Figure(data=[go.Pie(labels=type_volume['type'],
+                                             values=type_volume['volume'],
+                                             hole=.3,
+                                             pull=[0.03] * len(type_volume),
+                                             hoverinfo='label+percent',
+                                             textinfo='value',
+                                             textfont_size=20,
                                              marker=dict(line=dict(color='#000000', width=0.5)))])
 
             fig_pie.update_layout(title_text="Total Portfolio Composition by Type", title_x=0.5)
 
-            # Second layer (project names)
+            # Add the inner pie charts (by project name within each type)
             for i, project_type in enumerate(type_volume['type']):
-                project_data = project_type_map.loc[project_type]
-                positive_project_data = project_data[project_data > 0]
-                project_names = positive_project_data.index.tolist()
-                project_volumes = positive_project_data.values.tolist()
+                if project_type in project_type_volume.index:
+                    project_data = project_type_volume.loc[project_type]
+                    positive_project_data = project_data[project_data > 0]
+                    project_names = positive_project_data.index.tolist()
+                    project_volumes = positive_project_data.values.tolist()
+                    total_type_volume_current = type_volume['volume'].iloc[i]
 
-                total_type_volume = type_volume['volume'].iloc[i]
-                if total_type_volume > 0 and len(project_names) == len(project_volumes):
-                    sub_pie_values = [vol / total_type_volume for vol in project_volumes]
+                    if total_type_volume_current > 0 and len(project_names) == len(project_volumes):
+                        sub_pie_values = [vol / total_type_volume_current for vol in project_volumes]
 
-                    fig_pie.add_trace(go.Pie(labels=project_names, values=sub_pie_values,
-                                             hole=.6, direction='clockwise',
-                                             domain=dict(x=[0, 1], y=[0, 1]),
-                                             showlegend=False,
-                                             textinfo='none',
-                                             title=f"<b>{project_type.capitalize()}</b>",
-                                             titleposition="middle center",
-                                             titlefont_size=16,
-                                             marker=dict(line=dict(color='#000000', width=0.3)),
-                                             textfont_size=12,
-                                             # Removed the problematic rotation parameter
-                                            ))
-                elif total_type_volume > 0:
-                    st.warning(f"Warning: Length mismatch or no projects for type '{project_type}'. Skipping inner pie.")
+                        fig_pie.add_trace(go.Pie(labels=project_names,
+                                                 values=sub_pie_values,
+                                                 hole=.6,
+                                                 direction='clockwise',
+                                                 domain=dict(x=[0, 1], y=[0, 1]),
+                                                 showlegend=False,
+                                                 textinfo='none',
+                                                 title=f"<b>{project_type.capitalize()}</b>",
+                                                 titleposition="middle center",
+                                                 titlefont_size=16,
+                                                 marker=dict(line=dict(color='#000000', width=0.3)),
+                                                 textfont_size=12))
+                    elif total_type_volume_current > 0:
+                        st.warning(f"Warning: Inconsistent project data for type '{project_type}'. Skipping inner pie.")
+                else:
+                    st.warning(f"Warning: No detailed project data found for type '{project_type}'. Skipping inner pie.")
 
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("No projects allocated to display portfolio composition.")
+
+
+
         
         st.subheader("Yearly Summary")
         summary_display_df = summary_df.copy()
