@@ -606,31 +606,19 @@ if df_upload:
 
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
-
-            # --- Nested Pie Chart ---
-        st.subheader("Annual Portfolio Composition")
-        for year in selected_years:
-            year_data = portfolio_df[portfolio_df['year'] == year]
-            if not year_data.empty:
-                fig_pie = go.Figure(data=[go.Pie(
-                    labels=year_data['project name'],
-                    values=year_data['volume'],
-                    hoverinfo='label+percent',
-                    textinfo='value',
-                    insidetextorientation='radial'
-                )])
-                st.markdown(f"**{year} Portfolio Composition (by Volume)**")
-                st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info(f"No projects allocated for the year {year} to display a pie chart.")
-
-# --- Single Sunburst Chart (Year -> Project -> Volume) ---
+        # --- Single Sunburst Chart (Year -> Project -> Volume) ---
         st.subheader("Portfolio Composition by Year and Project (Sunburst Chart)")
         if not portfolio_df.empty:
+            # Handle potential NaN values (fill with a placeholder or remove)
+            portfolio_df_cleaned = portfolio_df.fillna({'project name': 'Unknown Project', 'year': 'Unknown Year', 'volume': 0})
+
+            # Ensure 'year' is a string
+            portfolio_df_cleaned['year'] = portfolio_df_cleaned['year'].astype(str)
+
             fig_sunburst = go.Figure(data=[go.Sunburst(
-                labels=portfolio_df['project name'],
-                parents=portfolio_df['year'].astype(str),
-                values=portfolio_df['volume'],
+                labels=portfolio_df_cleaned['project name'],
+                parents=portfolio_df_cleaned['year'],
+                values=portfolio_df_cleaned['volume'],
                 branchvalues="total",
                 outsidetextinfo='percent+value',
                 insidetextorientation='radial',
