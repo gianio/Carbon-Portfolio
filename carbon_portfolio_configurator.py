@@ -10,10 +10,10 @@ import seaborn as sns  # For potentially more appealing styles
 st.markdown("""
     <style>
     body {
-        background-color: #e6f2e6;
+        background-color: #9ec143;
     }
     .stApp {
-        background-color: #e6f2e6;
+        background-color: #9ec143;
     }
     </style>
 """, unsafe_allow_html=True)
