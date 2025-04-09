@@ -4,6 +4,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np # Added for potential NaN checks if needed
 
+# --- Define a nice green color palette ---
+primary_green = "#8BC34A" # Light Green
+secondary_green = "#689F38" # Medium Green
+background_green = "#F1F8E9" # Very Light Green
+text_green = "#33691E" # Dark Green
+accent_green = "#AED581" # Lime Green
+
 # --- Streamlit App Configuration ---
 st.set_page_config(layout="wide") # Optional: Use wider layout
 st.markdown(f"""
