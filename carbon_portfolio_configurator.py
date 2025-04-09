@@ -33,11 +33,12 @@ if df:
 
     # --- Project Overview Section ---
     st.subheader("Project Overview")
-    # Slider to determine the number of years for the portfolio
-    years = st.slider("How many years should the portfolio span?", 1, 6, 6)
+    # Input field for the number of years for the portfolio
+    years = st.number_input("How many years should the portfolio span?", min_value=1, max_value=10, value=6, step=1)
+    years = int(years) # Ensure it's an integer
     # Calculate the end year based on the starting year (2025) and the number of years
     end_year = 2025 + years - 1
-    # Create a list of selected years based on the slider value
+    # Create a list of selected years based on the input value
     selected_years = list(range(2025, end_year + 1))
 
     # Create a copy of the data for the overview
@@ -46,6 +47,8 @@ if df:
     price_cols = [f"price {year}" for year in selected_years if f"price {year}" in data.columns]
     # Calculate the average price across the selected years
     overview['avg_price'] = overview[price_cols].mean(axis=1)
+    # Round the average price to the nearest 0.5
+    overview['avg_price'] = round(overview['avg_price'] * 2) / 2
     # Display the project overview DataFrame, including description if available
     if 'description' in overview.columns:
         st.dataframe(overview[['project name', 'project type', 'description', 'avg_price']].drop_duplicates())
@@ -127,120 +130,108 @@ if df:
             year_str = f"{year}"
             removal_share = removal_percentages[year_idx]
             reduction_share = 1 - removal_share
-            annual_volume_or_budget = annual_constraints.get(year, 0)
+            annual_limit = annual_constraints.get(year, 0)
 
-            # Dictionary to store the allocated volumes for each project in the current year
-            volumes = {}
-            total_allocated = 0
+            # Dictionary to store the allocated volumes and costs for each project in the current year
+            allocated_projects = {}
+            total_allocated_volume = 0
+            total_allocated_cost = 0
 
             # --- Allocation Loop for Each Project Type ---
             for category in types:
-                # Determine the share of the annual volume or budget for the current category
-                if category == 'reduction':
-                    category_share = reduction_share
-                else:
-                    category_share = removal_share * category_split[category]
+                # Determine the target share for the current category
+                category_target = annual_limit * category_share
 
-                # Get projects of the current category with available volume for the current year
-                category_projects = project_types[category].copy()
-                category_projects = category_projects[category_projects.get(f"available volume {year_str}", 0) > 0]
+                # Get available projects for the current category and year, sorted by price for budget constraint
+                available_projects = project_types[category].copy()
+                available_projects = available_projects[available_projects.get(f"available volume {year_str}", 0) > 0].sort_values(by=f"price {year_str}")
 
-                # If no projects are available for the current category and year, add a broken rule
-                if category_projects.empty:
+                if available_projects.empty:
                     broken_rules.append(f"No available volume for {category} in {year}.")
                     continue
 
-                allocated_category_volume = 0
+                # --- Allocation Logic based on Constraint Type ---
+                if constraint_type == "Volume Constrained":
+                    # Allocate based on priority, then price
+                    if 'priority' in available_projects.columns:
+                        sorted_projects = available_projects.sort_values(by=['priority', f"price {year_str}"], ascending=[False, True])
+                    else:
+                        sorted_projects = available_projects.sort_values(by=f"price {year_str}")
 
-                # --- Priority-Based Allocation ---
-                if 'priority' in category_projects.columns:
-                    # Separate projects with and without a priority value
-                    priority_projects = category_projects[category_projects['priority'].notna()].copy()
-                    remaining_projects = category_projects[category_projects['priority'].isna()].copy()
+                    for _, project in sorted_projects.iterrows():
+                        available_volume = project.get(f"available volume {year_str}", 0)
+                        price = project.get(f"price {year_str}", 0)
+                        priority_factor = project.get('priority', 1) / 100 if 'priority' in project else 1
 
-                    # Allocate volume to priority projects based on their priority
-                    for _, row in priority_projects.iterrows():
-                        priority = row['priority'] / 100.0  # Convert percentage to fraction
-                        target_volume = annual_volume_or_budget * category_share * priority
-                        max_available = row.get(f"available volume {year_str}", 0)
-                        vol = min(target_volume, max_available)
-                        volumes[row['project name']] = {
-                            'volume': int(vol),
-                            'price': row.get(f'price {year_str}', 0),
-                            'type': category
-                        }
-                        allocated_category_volume += vol
+                        # Calculate potential allocation based on remaining volume and priority
+                        potential_volume = (annual_limit - total_allocated_volume) * category_share * priority_factor
+                        allocate_volume = min(potential_volume, available_volume)
 
-                    # Allocate remaining volume equally among non-priority projects
-                    num_remaining = len(remaining_projects)
-                    if num_remaining > 0:
-                        remaining_category_volume = annual_volume_or_budget * category_share - allocated_category_volume
-                        if remaining_category_volume > 0:
-                            share_per_remaining = remaining_category_volume / num_remaining
-                            for _, row in remaining_projects.iterrows():
-                                max_available = row.get(f"available volume {year_str}", 0)
-                                vol = min(share_per_remaining, max_available)
-                                volumes[row['project name']] = {
-                                    'volume': int(vol),
-                                    'price': row.get(f'price {year_str}', 0),
-                                    'type': category
-                                }
-                                allocated_category_volume += vol
-                # --- Equal Allocation if No Priority Column ---
-                else:
-                    # If 'priority' column doesn't exist, allocate equally among projects
-                    num_projects = len(category_projects)
-                    if num_projects > 0:
-                        share_per_project = annual_volume_or_budget * category_share / num_projects
-                        for _, row in category_projects.iterrows():
-                            max_available = row.get(f"available volume {year_str}", 0)
-                            vol = min(share_per_project, max_available)
-                            volumes[row['project name']] = {
-                                'volume': int(vol),
-                                'price': row.get(f'price {year_str}', 0),
+                        if allocate_volume > 0:
+                            allocated_projects[project['project name']] = {
+                                'volume': allocate_volume,
+                                'price': price,
                                 'type': category
                             }
-                            allocated_category_volume += vol
+                            total_allocated_volume += allocate_volume
+                            if total_allocated_volume >= annual_limit * category_share:
+                                break # Move to the next category
 
-                total_allocated += allocated_category_volume
+                else: # Budget Constrained
+                    # Allocate based on priority, then price (cheapest first)
+                    if 'priority' in available_projects.columns:
+                        sorted_projects = available_projects.sort_values(by=['priority', f"price {year_str}"], ascending=[False, True])
+                    else:
+                        sorted_projects = available_projects.sort_values(by=f"price {year_str}")
 
-            # Scale the allocated volumes if the total exceeds the annual volume or budget
-            if constraint_type == "Volume Constrained":
-                if total_allocated > 0:
-                    scale_factor = annual_volume_or_budget / total_allocated
-                    for v in volumes.values():
-                        v['volume'] = int(v['volume'] * scale_factor)
-                else:
-                    broken_rules.append(f"No available projects in {year}, cannot allocate volume.")
-            else:  # Budget Constrained
-                total_cost = sum(v['volume'] * v['price'] for v in volumes.values())
-                if total_cost > 0:
-                    scale_factor = annual_volume_or_budget / total_cost  # annual_volume_or_budget here is the budget
-                    for v in volumes.values():
-                        v['volume'] = int((v['volume'] * scale_factor))
-                else:
-                    broken_rules.append(f"No available projects in {year}, cannot allocate within budget.")
+                    for _, project in sorted_projects.iterrows():
+                        available_volume = project.get(f"available volume {year_str}", 0)
+                        price = project.get(f"price {year_str}", 0)
+                        priority_factor = project.get('priority', 1) / 100 if 'priority' in project else 1
 
-            # Store the allocated volumes for the current year in the portfolio dictionary
-            portfolio[year] = volumes
+                        # Calculate how much volume can be bought within the remaining budget for this category
+                        remaining_budget_category = category_target - (total_allocated_cost if category in [p['type'] for p in allocated_projects.values()] else 0)
+                        affordable_volume = remaining_budget_category / (price + 1e-9) # Avoid division by zero
+
+                        allocate_volume = min(affordable_volume * priority_factor, available_volume)
+                        cost = allocate_volume * price
+
+                        if total_allocated_cost + cost <= category_target and allocate_volume > 0:
+                            allocated_projects[project['project name']] = {
+                                'volume': allocate_volume,
+                                'price': price,
+                                'type': category
+                            }
+                            total_allocated_volume += allocate_volume
+                            total_allocated_cost += cost
+                            if total_allocated_cost >= category_target:
+                                break # Move to the next category
+
+            portfolio[year] = allocated_projects
 
         # --- Portfolio Analysis and Visualization ---
         composition_by_type = {t: [] for t in types}
         avg_prices = []
+        yearly_costs = {}
+        yearly_volumes = {}
 
         # Calculate the total volume per type and the average price for each year
         for year in selected_years:
-            annual_volume_or_budget = annual_constraints[year]
-            totals = {t: 0 for t in types}
+            annual_constraint = annual_constraints[year]
             total_cost = 0
-            for data in portfolio[year].values():
-                totals[data['type']] += data['volume']
-                total_cost += data['volume'] * data['price']
+            total_volume = 0
+            type_volumes = {t: 0 for t in types}
+            for project_info in portfolio[year].values():
+                type_volumes[project_info['type']] += project_info['volume']
+                total_cost += project_info['volume'] * project_info['price']
+                total_volume += project_info['volume']
 
             for t in types:
-                composition_by_type[t].append(totals[t])
+                composition_by_type[t].append(type_volumes[t])
 
-            avg_prices.append(total_cost / annual_volume_or_budget if annual_volume_or_budget > 0 else 0)
+            avg_prices.append(total_cost / (total_volume + 1e-9))
+            yearly_costs[year] = total_cost
+            yearly_volumes[year] = total_volume
 
         st.subheader("Portfolio Composition & Price Over Time")
 
@@ -253,13 +244,13 @@ if df:
         fig.add_trace(go.Bar(x=selected_years, y=composition_by_type['reduction'], name='Reduction', marker_color='#C5E1A5'), secondary_y=False)
 
         # Add a line trace for the average price
-        fig.add_trace(go.Scatter(x=selected_years, y=avg_prices, name='Average Price (€)', marker=dict(symbol='circle'), line=dict(color='#558B2F')), secondary_y=True)
+        fig.add_trace(go.Scatter(x=selected_years, y=avg_prices, name='Average Price (€/tonne)', marker=dict(symbol='circle'), line=dict(color='#558B2F')), secondary_y=True)
 
         # Update layout for better aesthetics
         fig.update_layout(
             xaxis_title='Year',
-            yaxis_title='Volume',
-            yaxis2_title='Average Price (€)',
+            yaxis_title='Volume (tonnes)',
+            yaxis2_title='Average Price (€/tonne)',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             barmode='stack',  # Stack the bar charts for volume composition
             template="plotly_white"  # Use a clean template
@@ -272,17 +263,28 @@ if df:
         final_tech = composition_by_type['technical removal'][-1]
         final_nat = composition_by_type['natural removal'][-1]
         final_total = final_tech + final_nat + composition_by_type['reduction'][-1]
-        achieved_removal = (final_tech + final_nat) / final_total if final_total > 0 else 0
+        achieved_removal = (final_tech + final_nat) / (final_total + 1e-9) * 100 if final_total > 0 else 0
 
-        st.markdown(f"**Achieved Removal % in {end_year}: {achieved_removal * 100:.2f}%**")
+        st.markdown(f"**Achieved Removal % in {end_year}: {achieved_removal:.2f}%**")
 
-        # Display any broken allocation rules or warnings
+        st.subheader("Yearly Summary")
+        summary_data = {'Year': selected_years}
+        if constraint_type == "Volume Constrained":
+            summary_data['Target Volume (tonnes)'] = [annual_constraints[year] for year in selected_years]
+            summary_data['Achieved Volume (tonnes)'] = [yearly_volumes[year] for year in selected_years]
+            summary_data['Total Cost (€)'] = [yearly_costs[year] for year in selected_years]
+        else:
+            summary_data['Budget (€)'] = [annual_constraints[year] for year in selected_years]
+            summary_data['Total Cost (€)'] = [yearly_costs[year] for year in selected_years]
+            summary_data['Achieved Volume (tonnes)'] = [yearly_volumes[year] for year in selected_years]
+
+        st.dataframe(pd.DataFrame(summary_data))
+
         if broken_rules:
             st.warning("One or more constraints could not be fully satisfied:")
             for msg in broken_rules:
                 st.text(f"- {msg}")
 
-        # Checkbox to show the raw project allocations
         if st.checkbox("Show raw project allocations"):
             full_table = []
             for year, projects in portfolio.items():
