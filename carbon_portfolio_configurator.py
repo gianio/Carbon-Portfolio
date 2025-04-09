@@ -14,7 +14,7 @@ st.markdown("""
         font-size: 16px; /* Default font size for the body */
     }
     .stApp {
-        background-color: #F0F2F6;
+        background-color: #A0C7DC;
     }
     /* Add some padding below the title */
     .stApp > header {
@@ -26,11 +26,11 @@ st.markdown("""
         padding-bottom: 5px;
         margin-top: 20px;
         font-family: Calibri, sans-serif; /* Font for subheaders */
-        font-size: 20px; /* Font size for subheaders */
+        font-size: 24px; /* Font size for subheaders */
     }
     p {
         font-family: Arial, sans-serif; /* Example: Different font for paragraphs */
-        font-size: 14px; /* Example: Different size for paragraphs */
+        font-size: 20px; /* Example: Different size for paragraphs */
         line-height: 1.6; /* Optional: Improve readability */
     }
     div {
