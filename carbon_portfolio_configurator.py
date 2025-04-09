@@ -608,10 +608,12 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart (Project Type -> Project) - Matplotlib ---
+# --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 2 ---
         st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Matplotlib")
         if not portfolio_df.empty:
             import matplotlib.pyplot as plt
+            import numpy as np
+            import pandas as pd  # Ensure pandas is imported
 
             # Aggregate total volume per project
             project_total_volume = portfolio_df.groupby(['project name', 'type'])['volume'].sum().reset_index()
@@ -620,13 +622,17 @@ if df_upload:
             # Aggregate total volume per project type
             type_total_volume = project_total_volume.groupby('type')['total_project_volume'].sum()
 
+            outer_labels = type_total_volume.index.tolist()
+            outer_sizes = type_total_volume.values.tolist()
+
+            # Ensure outer_sizes is a clean list of numbers
+            outer_sizes = [float(size) if pd.notna(size) else 0.0 for size in outer_sizes]
+
             # Create the figure and axes
             fig, ax = plt.subplots()
             ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 
             # Outer pie chart (Project Types)
-            outer_labels = type_total_volume.index.tolist()
-            outer_sizes = type_total_volume.values.tolist()
             outer_colors = plt.cm.viridis(np.linspace(0, 1, len(outer_labels)))  # Example color map
 
             wedges_outer, texts_outer = ax.pie(outer_sizes, labels=outer_labels, radius=1,
@@ -640,19 +646,12 @@ if df_upload:
             # Prepare data for the inner pie chart
             inner_labels = project_total_volume['project name'].tolist()
             inner_sizes = project_total_volume['total_project_volume'].tolist()
+            inner_sizes = [float(size) if pd.notna(size) else 0.0 for size in inner_sizes]
+
             inner_wedges, inner_texts, inner_autotexts = ax.pie(inner_sizes, labels=inner_labels, radius=inner_radius,
                                                                autopct='%1.1f%%', startangle=90,
                                                                colors=inner_colors, labeldistance=0.7,
-                                                               wedgeprops=dict(width=0.3, edgecolor='w'),
-                                                               textprops=dict(size=8))
-
-            ax.set(aspect="equal", title='Portfolio Composition')
-            st.pyplot(fig)
-
-            st.caption("Nested pie chart showing portfolio composition using Matplotlib.")
-
-        else:
-            st.info("No projects allocated to display the nested volume chart.")
+                                                               wedgeprops=dict
     
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
