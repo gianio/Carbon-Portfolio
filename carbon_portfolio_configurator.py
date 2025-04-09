@@ -305,3 +305,31 @@ if df:
         st.subheader("Yearly Summary")
         summary_data = {'Year': selected_years}
         if constraint_type == "Volume Constrained":
+            summary_data['Target Volume (tonnes)'] = [annual_constraints[year] for year in selected_years]
+            summary_data['Achieved Volume (tonnes)'] = [yearly_volumes[year] for year in selected_years]
+            summary_data['Total Cost (€)'] = [yearly_costs[year] for year in selected_years]
+        else:
+            summary_data['Budget (€)'] = [annual_constraints[year] for year in selected_years]
+            summary_data['Total Cost (€)'] = [yearly_costs[year] for year in selected_years]
+            summary_data['Achieved Volume (tonnes)'] = [yearly_volumes[year] for year in selected_years]
+
+        st.dataframe(pd.DataFrame(summary_data))
+
+        if broken_rules:
+            st.warning("One or more constraints could not be fully satisfied:")
+            for msg in broken_rules:
+                st.text(f"- {msg}")
+
+        if st.checkbox("Show raw project allocations"):
+            full_table = []
+            for year, projects in portfolio.items():
+                for name, info in projects.items():
+                    full_table.append({
+                        'year': year,
+                        'project name': name,
+                        'type': info['type'],
+                        'volume': info['volume'],
+                        'price': info['price'],
+                        'cost': info['volume'] * info['price']
+                    })
+            st.dataframe(pd.DataFrame(full_table))
