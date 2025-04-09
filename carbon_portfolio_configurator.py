@@ -622,3 +622,6 @@ with wide_col:
                  display_portfolio_df['price'] = display_portfolio_df['price'].map('{:,.2f}'.format)
                  display_portfolio_df['cost'] = display_portfolio_df['cost'].map('{:,.2f}'.format)
                  st.dataframe(display_portfolio_df[['year', 'project name', 'type', 'volume', 'price', 'cost']].sort_values(by=['year', 'project name']))
+    
+        elif df_upload:
+             st.warning("Please select at least one project in Step 2 to build the portfolio.")
