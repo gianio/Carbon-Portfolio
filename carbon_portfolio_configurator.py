@@ -144,7 +144,7 @@ if df:
                 volume_column = f"available volume {year_str}"
                 price_column = f"price {year_str}"
                 if volume_column in available_projects.columns and price_column in available_projects.columns:
-                    available_projects = available_projects[available_projects[volume_column] > 0].sort_values(by=price_column)
+                    available_projects = available_projects[pd.notna(available_projects[volume_column]) & (available_projects[volume_column] > 0)].sort_values(by=price_column)
                 else:
                     # Handle the case where the expected columns are not present
                     st.warning(f"Expected columns {volume_column} or {price_column} not found in the data.")
