@@ -5,11 +5,11 @@ from plotly.subplots import make_subplots
 import numpy as np # Added for potential NaN checks if needed
 
 # --- Define a nice green color palette ---
-primary_green = "#8BC34A" # Light Green
-secondary_green = "#689F38" # Medium Green
-background_green = "#DCF0DC" # Very Light Green
+primary_green = "#D7F0C8" # Light Green
+secondary_green = "#D7F0C8" # Medium Green
+background_green = "#D7F0C8" # Very Light Green
 text_green = "#33691E" # Dark Green
-accent_green = "#AED581" # Lime Green
+accent_green = "#D7F0C8" # Lime Green
 
 # --- Streamlit App Configuration ---
 st.set_page_config(layout="wide") # Optional: Use wider layout
