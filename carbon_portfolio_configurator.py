@@ -607,7 +607,8 @@ if df_upload:
 
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
-# --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 3 ---
+
+        # --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 4 ---
         st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Matplotlib")
         if not portfolio_df.empty:
             import matplotlib.pyplot as plt
@@ -620,6 +621,10 @@ if df_upload:
 
             # Aggregate total volume per project type
             type_total_volume = project_total_volume.groupby('type')['total_project_volume'].sum()
+
+            st.subheader("Debugging type_total_volume")
+            st.write("Type of type_total_volume:", type(type_total_volume))
+            st.write("Content of type_total_volume:", type_total_volume)
 
             outer_labels = type_total_volume.index.tolist()
             outer_sizes = [float(x) for x in pd.to_numeric(type_total_volume.values, errors='coerce').fillna(0)]
