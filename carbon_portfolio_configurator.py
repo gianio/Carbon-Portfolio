@@ -10,10 +10,10 @@ import seaborn as sns  # For potentially more appealing styles
 st.markdown("""
     <style>
     body {
-        background-color: #9ec143;
+        background-color: #D9E1C8;
     }
     .stApp {
-        background-color: #9ec143;
+        background-color: #D9E1C8;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -204,9 +204,7 @@ if df:
             yaxis2_title='Average Price (€)',
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             barmode='stack',
-            template="plotly_white", # Use a clean template
-            plot_bgcolor='#9ec143',  # Set the plot background color
-            paper_bgcolor='#9ec143'     # Set the paper (surrounding) background color
+            template="plotly_white" # Use a clean template
         )
         
         st.plotly_chart(fig)
