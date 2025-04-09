@@ -137,7 +137,10 @@ if df:
             # --- Allocation Loop for Each Project Type ---
             for category in types:
                 # Determine the target share for the current category
-                category_target = annual_limit * category_split.get(category, 0)
+                if category in ['technical removal', 'natural removal']:
+                    category_share = annual_limit * removal_share * category_split.get(category, 0)
+                else: # reduction
+                    category_share = annual_limit * reduction_share
 
                 # Get available projects for the current category and year, sorted by price for budget constraint
                 available_projects = project_types[category].copy()
@@ -168,17 +171,18 @@ if df:
                         priority_factor = project.get('priority', 1) / 100 if 'priority' in project else 1
 
                         # Calculate potential allocation based on remaining volume and priority
-                        potential_volume = (annual_limit - total_allocated_volume) * category_share * priority_factor
+                        potential_volume = (annual_limit * (removal_share if category in ['technical removal', 'natural removal'] else reduction_share) - sum(p['volume'] for p in allocated_projects.values() if p['type'] == category)) * priority_factor # Removed category_share here
+
                         allocate_volume = min(potential_volume, available_volume)
 
-                        if allocate_volume > 0:
+                        if total_allocated_volume + allocate_volume <= annual_limit and allocate_volume > 0:
                             allocated_projects[project['project name']] = {
                                 'volume': allocate_volume,
                                 'price': price,
                                 'type': category
                             }
                             total_allocated_volume += allocate_volume
-                            if total_allocated_volume >= annual_limit * category_share:
+                            if total_allocated_volume >= annual_limit * (removal_share if category in ['technical removal', 'natural removal'] else reduction_share):
                                 break # Move to the next category
 
                 else: # Budget Constrained
