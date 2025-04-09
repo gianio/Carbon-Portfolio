@@ -651,7 +651,16 @@ if df_upload:
             inner_wedges, inner_texts, inner_autotexts = ax.pie(inner_sizes, labels=inner_labels, radius=inner_radius,
                                                                autopct='%1.1f%%', startangle=90,
                                                                colors=inner_colors, labeldistance=0.7,
-                                                               wedgeprops=dict
+                                                               wedgeprops=dict(width=0.3, edgecolor='w'),
+                                                               textprops=dict(size=8))
+
+            ax.set(aspect="equal", title='Portfolio Composition')
+            st.pyplot(fig)
+
+            st.caption("Nested pie chart showing portfolio composition using Matplotlib.")
+
+        else:
+            st.info("No projects allocated to display the nested volume chart.")
     
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
