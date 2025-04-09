@@ -576,63 +576,57 @@ if df_upload:
         else:
              st.info(f"No data allocated for the final year ({end_year}).")
 
-        # --- Total Portfolio Composition Pie Chart ---
-        st.subheader("Total Portfolio Composition")
+
+
+        # --- Total Portfolio Composition Nested Pie Chart ---
+        st.subheader("Total Portfolio Composition (Nested)")
         if portfolio_data_list:
             total_portfolio_df = pd.DataFrame(portfolio_data_list)
 
             # Group by project type and sum volume
             type_volume = total_portfolio_df.groupby('type')['volume'].sum().reset_index()
 
-            # Group by project type and project name, then sum volume and unstack
-            project_type_volume = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().unstack(fill_value=0)
+            # Group by project type and project name, then sum volume
+            project_name_volume = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().reset_index()
 
-            # Create the outer pie chart (by project type)
-            fig_pie = go.Figure(data=[go.Pie(labels=type_volume['type'],
-                                             values=type_volume['volume'],
-                                             hole=.3,
-                                             pull=[0.03] * len(type_volume),
-                                             hoverinfo='label+percent',
-                                             textinfo='value',
-                                             textfont_size=20,
-                                             marker=dict(line=dict(color='#000000', width=0.5)))])
+            # Create the nested pie chart data
+            labels = []
+            parents = []
+            values = []
+            colors = {}  # To assign colors to project types
 
-            fig_pie.update_layout(title_text="Total Portfolio Composition by Type", title_x=0.5)
+            # Assign colors to project types
+            unique_types = type_volume['type'].unique()
+            color_scale = plotly.colors.qualitative.Prism
+            for i, utype in enumerate(unique_types):
+                colors[utype] = color_scale[i % len(color_scale)]
 
-            # Add the inner pie charts (by project name within each type)
-            for i, project_type in enumerate(type_volume['type']):
-                if project_type in project_type_volume.index:
-                    project_data = project_type_volume.loc[project_type]
-                    positive_project_data = project_data[project_data > 0]
-                    project_names = positive_project_data.index.tolist()
-                    project_volumes = positive_project_data.values.tolist()
-                    total_type_volume_current = type_volume['volume'].iloc[i]
+            # Outer level: Project Types
+            for index, row in type_volume.iterrows():
+                labels.append(row['type'].capitalize())
+                parents.append("")  # Root level
+                values.append(row['volume'])
 
-                    if total_type_volume_current > 0 and len(project_names) == len(project_volumes):
-                        sub_pie_values = [vol / total_type_volume_current for vol in project_volumes]
+            # Inner level: Project Names
+            for index, row in project_name_volume.iterrows():
+                labels.append(row['project name'])
+                parents.append(row['type'].capitalize())
+                values.append(row['volume'])
 
-                        fig_pie.add_trace(go.Pie(labels=project_names,
-                                                 values=sub_pie_values,
-                                                 hole=.6,
-                                                 direction='clockwise',
-                                                 domain=dict(x=[0, 1], y=[0, 1]),
-                                                 showlegend=False,
-                                                 textinfo='none',
-                                                 title=f"<b>{project_type.capitalize()}</b>",
-                                                 titleposition="middle center",
-                                                 titlefont_size=16,
-                                                 marker=dict(line=dict(color='#000000', width=0.3)),
-                                                 textfont_size=12))
-                    elif total_type_volume_current > 0:
-                        st.warning(f"Warning: Inconsistent project data for type '{project_type}'. Skipping inner pie.")
-                else:
-                    st.warning(f"Warning: No detailed project data found for type '{project_type}'. Skipping inner pie.")
+            fig_nested_pie = go.Figure(go.Sunburst(
+                labels=labels,
+                parents=parents,
+                values=values,
+                branchvalues="total",
+                marker=dict(colors=[colors.get(parent.lower(), '#ccc') if parent else '#eee' for parent in parents]),
+                hovertemplate='<b>%{label}</b>: %{percentParent:.1%}<br>Volume: %{value}<extra></extra>'
+            ))
 
-            st.plotly_chart(fig_pie, use_container_width=True)
+            fig_nested_pie.update_layout(margin=dict(t=30, l=0, r=0, b=0))
+            st.plotly_chart(fig_nested_pie, use_container_width=True)
+
         else:
             st.info("No projects allocated to display portfolio composition.")
-
-
 
         
         st.subheader("Yearly Summary")
