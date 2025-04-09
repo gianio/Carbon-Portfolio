@@ -34,6 +34,13 @@ if df:
     # --- Project Overview Section ---
     st.subheader("Project Overview")
 
+    # Slider to determine the number of years for the portfolio
+    years = st.slider("How many years should the portfolio span?", 1, 6, 6)
+    # Calculate the end year based on the starting year (2025) and the number of years
+    end_year = 2025 + years - 1
+    # Create a list of selected years based on the slider value
+    selected_years = list(range(2025, end_year + 1))
+    
     # Create a copy of the data for the overview
     overview = data.copy()
     # Identify price columns based on the selected years
@@ -45,13 +52,6 @@ if df:
         st.dataframe(overview[['project name', 'project type', 'description', 'avg_price']].drop_duplicates())
     else:
         st.dataframe(overview[['project name', 'project type', 'avg_price']].drop_duplicates())
-        
-    # Slider to determine the number of years for the portfolio
-    years = st.slider("How many years should the portfolio span?", 1, 6, 6)
-    # Calculate the end year based on the starting year (2025) and the number of years
-    end_year = 2025 + years - 1
-    # Create a list of selected years based on the slider value
-    selected_years = list(range(2025, end_year + 1))
     
     # --- Portfolio Settings Section ---
     st.subheader("Step 1: Define Portfolio Settings")
