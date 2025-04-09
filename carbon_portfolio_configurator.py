@@ -9,9 +9,9 @@ st.set_page_config(layout="wide") # Optional: Use wider layout
 st.markdown("""
     <style>
     body {
-        background-color: #F0F2F6; /* Lighter grey background */
-        font-family: sans-serif; /* Example: Use a sans-serif font */
-        font-size: 16px; /* Example: Set a base font size */
+        background-color: #A0C7DC; /* Lighter blue background */
+        font-family: Calibri, sans-serif; /* Default font for the body */
+        font-size: 16px; /* Default font size for the body */
     }
     .stApp {
         background-color: #F0F2F6;
@@ -25,11 +25,21 @@ st.markdown("""
         border-bottom: 2px solid #AED581; /* Green underline for subheaders */
         padding-bottom: 5px;
         margin-top: 20px;
-        font-family: calibr; /* Example: Use a calibri font for subheaders */
-        font-size: 24px; /* Example: Set a larger font size for subheaders */
+        font-family: Calibri, sans-serif; /* Font for subheaders */
+        font-size: 20px; /* Font size for subheaders */
+    }
+    p {
+        font-family: Arial, sans-serif; /* Example: Different font for paragraphs */
+        font-size: 14px; /* Example: Different size for paragraphs */
+        line-height: 1.6; /* Optional: Improve readability */
+    }
+    div {
+        font-family: Arial, sans-serif; /* Apply to divs as well if they contain text */
     }
     </style>
 """, unsafe_allow_html=True)
+
+
 st.title("🌱 Multi-Year Carbon Portfolio Builder")
 
 # --- Data Input ---
