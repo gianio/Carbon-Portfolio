@@ -608,44 +608,28 @@ if df_upload:
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
 
-        # --- Single Sunburst Chart (Year -> Project -> Volume) ---
-        st.subheader("Portfolio Composition by Year and Project (Sunburst Chart)")
+        # --- Single Pie Chart (Total Volume per Project) ---
+        st.subheader("Total Portfolio Volume per Project (Across All Years)")
         if not portfolio_df.empty:
-            labels_sunburst = portfolio_df['project name'].astype(str).tolist()
-            parents_sunburst = portfolio_df['year'].astype(str).tolist()
-            values_sunburst = portfolio_df['volume'].tolist()
+            # Aggregate total volume per project
+            project_total_volume = portfolio_df.groupby('project name')['volume'].sum().reset_index()
 
-            st.subheader("Debugging Sunburst Data")
-            st.write("Labels:", labels_sunburst[:5])  # Show first 5
-            st.write("Parents:", parents_sunburst[:5])
-            st.write("Values:", values_sunburst[:5])
-            st.write("Length of Labels:", len(labels_sunburst))
-            st.write("Length of Parents:", len(parents_sunburst))
-            st.write("Length of Values:", len(values_sunburst))
-            st.write("Data type of Values:", type(values_sunburst[0]) if values_sunburst else None)
-            st.write("Are there NaNs in Values?", any(pd.isna(v) for v in values_sunburst))
-            st.write("Are there non-numeric values in Values?", any(not isinstance(v, (int, float)) for v in values_sunburst))
-
-            fig_sunburst = go.Figure(data=[go.Sunburst(
-                labels=labels_sunburst,
-                parents=parents_sunburst,
-                values=values_sunburst,
-                branchvalues="total",
-                outsidetextinfo='percent+value',
+            fig_total_volume_pie = go.Figure(data=[go.Pie(
+                labels=project_total_volume['project name'],
+                values=project_total_volume['volume'],
+                hoverinfo='label+percent+value',
+                textinfo='value',
                 insidetextorientation='radial',
-                marker=dict(line=dict(color='white', width=0.5)),
-                # Customize colors if needed based on project type or year
-                # marker=dict(colors=...)
+                marker=dict(line=dict(color='white', width=0.5))
             )])
 
-            fig_sunburst.update_layout(margin=dict(t=0, l=0, r=0, b=0))
-            st.plotly_chart(fig_sunburst, use_container_width=True)
+            fig_total_volume_pie.update_layout(margin=dict(t=0, l=0, r=0, b=0))
+            st.plotly_chart(fig_total_volume_pie, use_container_width=True)
 
-            st.caption("Sunburst chart showing portfolio composition. Inner levels represent years, and outer levels represent individual projects with their volume contribution.")
+            st.caption("Pie chart showing the total allocated volume for each project across all selected years.")
 
         else:
-            st.info("No projects allocated to display the sunburst chart.")
-        
+            st.info("No projects allocated to display the total volume per project chart.")
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
         if st.checkbox("Show raw project allocations by year", key="show_raw"):
