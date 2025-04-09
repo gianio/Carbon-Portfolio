@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import matplotlib.pyplot as plt
 import numpy as np # Added for potential NaN checks if needed
 
 # --- Define a nice green color palette ---
@@ -607,34 +608,48 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart (Project Type -> Project) - Renamed Projects ---
-        st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Renamed")
+# --- Nested Pie Chart (Project Type -> Project) - Matplotlib ---
+        st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Matplotlib")
         if not portfolio_df.empty:
+            import matplotlib.pyplot as plt
+
             # Aggregate total volume per project
             project_total_volume = portfolio_df.groupby(['project name', 'type'])['volume'].sum().reset_index()
             project_total_volume = project_total_volume.rename(columns={'volume': 'total_project_volume'})
 
-            # Assign generic project names
-            project_total_volume['generic_project_name'] = [f"Project {i+1}" for i in range(len(project_total_volume))]
+            # Aggregate total volume per project type
+            type_total_volume = project_total_volume.groupby('type')['total_project_volume'].sum()
 
-            labels_sunburst = project_total_volume['generic_project_name'].tolist()
-            parents_sunburst = project_total_volume['type'].tolist()
-            values_sunburst = project_total_volume['total_project_volume'].tolist()
+            # Create the figure and axes
+            fig, ax = plt.subplots()
+            ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
 
-            fig_nested_volume = go.Figure(data=[go.Sunburst(
-                labels=labels_sunburst,
-                parents=parents_sunburst,
-                values=values_sunburst,
-                branchvalues="total",
-                outsidetextinfo='percent',
-                insidetextorientation='radial',
-                marker=dict(line=dict(color='white', width=0.5)),
-            )])
+            # Outer pie chart (Project Types)
+            outer_labels = type_total_volume.index.tolist()
+            outer_sizes = type_total_volume.values.tolist()
+            outer_colors = plt.cm.viridis(np.linspace(0, 1, len(outer_labels)))  # Example color map
 
-            fig_nested_volume.update_layout(margin=dict(t=0, l=0, r=0, b=0))
-            st.plotly_chart(fig_nested_volume, use_container_width=True)
+            wedges_outer, texts_outer = ax.pie(outer_sizes, labels=outer_labels, radius=1,
+                                               autopct='%1.1f%%', startangle=90,
+                                               colors=outer_colors, wedgeprops=dict(width=0.3, edgecolor='w'))
 
-            st.caption("Nested pie chart showing total allocated volume. Inner segments represent projects (renamed), and outer segments represent their project types.")
+            # Inner pie chart (Projects within each type)
+            inner_radius = 1 - 0.3
+            inner_colors = plt.cm.plasma(np.linspace(0, 1, len(project_total_volume))) # Example color map
+
+            # Prepare data for the inner pie chart
+            inner_labels = project_total_volume['project name'].tolist()
+            inner_sizes = project_total_volume['total_project_volume'].tolist()
+            inner_wedges, inner_texts, inner_autotexts = ax.pie(inner_sizes, labels=inner_labels, radius=inner_radius,
+                                                               autopct='%1.1f%%', startangle=90,
+                                                               colors=inner_colors, labeldistance=0.7,
+                                                               wedgeprops=dict(width=0.3, edgecolor='w'),
+                                                               textprops=dict(size=8))
+
+            ax.set(aspect="equal", title='Portfolio Composition')
+            st.pyplot(fig)
+
+            st.caption("Nested pie chart showing portfolio composition using Matplotlib.")
 
         else:
             st.info("No projects allocated to display the nested volume chart.")
