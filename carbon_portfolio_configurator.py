@@ -12,7 +12,7 @@ text_green = "#33691E" # Dark Green
 accent_green = "#D7F0C8" # Lime Green
 
 # --- Streamlit App Configuration ---
-st.set_page_config(layout="slim") # Optional: Use wider layout
+st.set_page_config(layout="centered") # Optional: Use wider layout
 st.markdown(f"""
     <style>
     body {{
