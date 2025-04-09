@@ -608,7 +608,7 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 2 ---
+# --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 3 ---
         st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Matplotlib")
         if not portfolio_df.empty:
             import matplotlib.pyplot as plt
@@ -623,10 +623,7 @@ if df_upload:
             type_total_volume = project_total_volume.groupby('type')['total_project_volume'].sum()
 
             outer_labels = type_total_volume.index.tolist()
-            outer_sizes = type_total_volume.values.tolist()
-
-            # Ensure outer_sizes is a clean list of numbers
-            outer_sizes = [float(size) if pd.notna(size) else 0.0 for size in outer_sizes]
+            outer_sizes = [float(x) for x in pd.to_numeric(type_total_volume.values, errors='coerce').fillna(0)]
 
             # Create the figure and axes
             fig, ax = plt.subplots()
@@ -645,8 +642,7 @@ if df_upload:
 
             # Prepare data for the inner pie chart
             inner_labels = project_total_volume['project name'].tolist()
-            inner_sizes = project_total_volume['total_project_volume'].tolist()
-            inner_sizes = [float(size) if pd.notna(size) else 0.0 for size in inner_sizes]
+            inner_sizes = [float(x) for x in pd.to_numeric(project_total_volume['total_project_volume'].values, errors='coerce').fillna(0)]
 
             inner_wedges, inner_texts, inner_autotexts = ax.pie(inner_sizes, labels=inner_labels, radius=inner_radius,
                                                                autopct='%1.1f%%', startangle=90,
@@ -660,7 +656,7 @@ if df_upload:
             st.caption("Nested pie chart showing portfolio composition using Matplotlib.")
 
         else:
-            st.info("No projects allocated to display the nested volume chart.")
+            st.info("No
     
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
