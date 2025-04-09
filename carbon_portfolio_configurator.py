@@ -621,4 +621,4 @@ with wide_col:
                  display_portfolio_df['volume'] = display_portfolio_df['volume'].map('{:,.2f}'.format)
                  display_portfolio_df['price'] = display_portfolio_df['price'].map('{:,.2f}'.format)
                  display_portfolio_df['cost'] = display_portfolio_df['cost'].map('{:,.2f}'.format)
-                 st.dataframe(display_portfolio_df[['year', 'project name', 'type', 'volume', 'price', 'cost']].sort_values(by=['year', 'project name'])
+                 st.dataframe(display_portfolio_df[['year', 'project name', 'type', 'volume', 'price', 'cost']].sort_values(by=['year', 'project name']))
