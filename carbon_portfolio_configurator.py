@@ -576,59 +576,6 @@ if df_upload:
         else:
              st.info(f"No data allocated for the final year ({end_year}).")
 
-
-
-        # --- Total Portfolio Composition Nested Pie Chart ---
-        st.subheader("Total Portfolio Composition (Nested)")
-        if portfolio_data_list:
-            total_portfolio_df = pd.DataFrame(portfolio_data_list)
-
-            # Group by project type and sum volume
-            type_volume = total_portfolio_df.groupby('type')['volume'].sum().reset_index()
-
-            # Group by project type and project name, then sum volume
-            project_name_volume = total_portfolio_df.groupby(['type', 'project name'])['volume'].sum().reset_index()
-
-            # Create the nested pie chart data
-            labels = []
-            parents = []
-            values = []
-            colors = {}  # To assign colors to project types
-
-            # Assign colors to project types
-            unique_types = type_volume['type'].unique()
-            color_scale = plotly.colors.qualitative.Prism
-            for i, utype in enumerate(unique_types):
-                colors[utype] = color_scale[i % len(color_scale)]
-
-            # Outer level: Project Types
-            for index, row in type_volume.iterrows():
-                labels.append(row['type'].capitalize())
-                parents.append("")  # Root level
-                values.append(row['volume'])
-
-            # Inner level: Project Names
-            for index, row in project_name_volume.iterrows():
-                labels.append(row['project name'])
-                parents.append(row['type'].capitalize())
-                values.append(row['volume'])
-
-            fig_nested_pie = go.Figure(go.Sunburst(
-                labels=labels,
-                parents=parents,
-                values=values,
-                branchvalues="total",
-                marker=dict(colors=[colors.get(parent.lower(), '#ccc') if parent else '#eee' for parent in parents]),
-                hovertemplate='<b>%{label}</b>: %{percentParent:.1%}<br>Volume: %{value}<extra></extra>'
-            ))
-
-            fig_nested_pie.update_layout(margin=dict(t=30, l=0, r=0, b=0))
-            st.plotly_chart(fig_nested_pie, use_container_width=True)
-
-        else:
-            st.info("No projects allocated to display portfolio composition.")
-
-        
         st.subheader("Yearly Summary")
         summary_display_df = summary_df.copy()
         # Standardize column names before display
