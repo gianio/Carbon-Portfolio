@@ -607,6 +607,46 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
+        # --- Nested Pie Chart for Final Year Composition ---
+        st.subheader(f"Portfolio Composition in {end_year}")
+        final_year_data = portfolio_df[portfolio_df['year'] == end_year]
+
+        if not final_year_data.empty:
+            type_summary = final_year_data.groupby('type')['volume'].sum().reset_index()
+            project_summary = final_year_data.groupby(['type', 'project name'])['volume'].sum().reset_index()
+
+            fig_pie = go.Figure(data=[go.Pie(labels=type_summary['type'].str.capitalize(),
+                                             values=type_summary['volume'],
+                                             hole=.3,
+                                             pull=[0.05] * len(type_summary),
+                                             marker_colors=[color_map.get(t, default_color) for t in type_summary['type']],
+                                             textinfo='percent+label',
+                                             insidetextorientation='radial'
+                                            )])
+
+            # Add second pie chart for projects within each type
+            for i, type_name in enumerate(type_summary['type']):
+                subset = project_summary[project_summary['type'] == type_name]
+                if not subset.empty:
+                    fig_pie.add_trace(go.Pie(labels=subset['project name'],
+                                             values=subset['volume'],
+                                             name=type_name.capitalize(),
+                                             domain=dict(column=0),
+                                             hole=.6,
+                                             textinfo='percent',
+                                             textposition='outside',
+                                             showlegend=False,
+                                             marker_colors=[color_map.get(type_name, default_color)] * len(subset) # Use consistent color
+                                            ))
+
+            fig_pie.update_layout(title_text=f"Carbon Portfolio Composition by Type and Project in {end_year}",
+                                  grid=dict(rows=1, columns=1), # Adjust rows/columns if showing multiple years
+                                  legend=dict(orientation="h", yanchor="bottom", y=-0.05, xanchor="center", x=0.5),
+                                  template="plotly_white")
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info(f"No projects were allocated for the year {end_year}, so no composition to display.")
+        
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
         if st.checkbox("Show raw project allocations by year", key="show_raw"):
