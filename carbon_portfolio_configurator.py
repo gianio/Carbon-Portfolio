@@ -11,6 +11,10 @@ accent_color = "#8BC34A"   # Light Green
 background_color = "#F0F8F0" # Very Light Green
 text_color = "#212121"     # Dark Grey
 
+def primary_color_rgb(hex_color):
+    hex_color = hex_color.lstrip('#')
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
 # --- Streamlit App Configuration ---
 st.set_page_config(layout="wide") # Optional: Use wider layout
 st.markdown(f"""
@@ -27,7 +31,7 @@ st.markdown(f"""
     .stApp > header {{
         margin-bottom: 1.5rem;
         padding: 1rem 0;
-        background-color: rgba({primary_color_rgb(primary_color)}, 0.05); /* Subtle header background */
+        background-color: rgba({', '.join(map(str, primary_color_rgb(primary_color)))}, 0.05); /* Subtle header background */
         border-bottom: 1px solid {accent_color};
     }}
     h1 {{
