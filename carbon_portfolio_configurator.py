@@ -141,7 +141,14 @@ if df:
 
                 # Get available projects for the current category and year, sorted by price for budget constraint
                 available_projects = project_types[category].copy()
-                available_projects = available_projects[available_projects.get(f"available volume {year_str}", 0) > 0].sort_values(by=f"price {year_str}")
+                volume_column = f"available volume {year_str}"
+                price_column = f"price {year_str}"
+                if volume_column in available_projects.columns and price_column in available_projects.columns:
+                    available_projects = available_projects[available_projects[volume_column] > 0].sort_values(by=price_column)
+                else:
+                    # Handle the case where the expected columns are not present
+                    st.warning(f"Expected columns {volume_column} or {price_column} not found in the data.")
+                    available_projects = pd.DataFrame()  # or handle appropriately
 
                 if available_projects.empty:
                     broken_rules.append(f"No available volume for {category} in {year}.")
