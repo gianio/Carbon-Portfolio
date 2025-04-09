@@ -55,7 +55,6 @@ if df:
         for year in selected_years:
             annual_constraints[year] = st.number_input(f"Annual budget for {year} (€):", min_value=0, step=1000, value=10000)
 
-    # Slider for target removal percentage (will be ignored if only reductions are selected)
     removal_target = st.slider(f"Target total removal % for year {end_year}", 0, 100, 80) / 100
     transition_speed = st.slider("Transition Speed (1 = Slow, 10 = Fast)", 1, 10, 5)
     removal_preference = st.slider("Removal Preference (1 = Natural, 10 = Technical)", 1, 10, 5)
@@ -77,7 +76,6 @@ if df:
         elif only_reductions:
             st.info("Only reduction projects are selected. Transition and removal preference will be ignored.")
 
-        # Apply priority boost
         if favorite_projects:
             selected_df['priority'] = selected_df.apply(
                 lambda row: row['priority'] + 10 if row['project name'] in favorite_projects and pd.notna(row['priority']) and row['priority'] < 100 else row['priority'],
@@ -87,7 +85,7 @@ if df:
 
         removal_types = ['technical removal', 'natural removal']
         reduction_type = ['reduction']
-        all_types = selected_types  # Use only the selected types
+        all_types = selected_types
 
         project_types = {t: selected_df[selected_df['project type'] == t] for t in all_types}
 
@@ -101,48 +99,104 @@ if df:
             total_allocated_volume = 0
             total_allocated_cost = 0
 
-            target_removal_volume_year = annual_limit if only_removals and constraint_type == "Volume Constrained" else annual_limit * (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed)) if 'technical removal' in all_types or 'natural removal' in all_types else 0
-            target_reduction_volume_year = annual_limit if only_reductions and constraint_type == "Volume Constrained" else annual_limit * (1 - (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed))) if 'reduction' in all_types and ('technical removal' in all_types or 'natural removal' in all_types) else annual_limit if only_reductions and constraint_type == "Volume Constrained" else annual_limit * 1 if 'reduction' in all_types and not ('technical removal' in all_types or 'natural removal' in all_types) else 0
+            removal_preference_factor = removal_preference / 10
+            natural_preference_factor = 1 - removal_preference_factor
 
-            target_budget_removal_year = annual_limit if only_removals and constraint_type == "Budget Constrained" else annual_limit * (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed)) if 'technical removal' in all_types or 'natural removal' in all_types else 0
-            target_budget_reduction_year = annual_limit if only_reductions and constraint_type == "Budget Constrained" else annual_limit * (1 - (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed))) if 'reduction' in all_types and ('technical removal' in all_types or 'natural removal' in all_types) else annual_limit if only_reductions and constraint_type == "Budget Constrained" else annual_limit * 1 if 'reduction' in all_types and not ('technical removal' in all_types or 'natural removal' in all_types) else 0
+            target_removal_volume_year = annual_limit * (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed)) if 'technical removal' in all_types or 'natural removal' in all_types else 0
+            target_reduction_volume_year = annual_limit * (1 - (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed))) if 'reduction' in all_types and ('technical removal' in all_types or 'natural removal' in all_types) else annual_limit if only_reductions and constraint_type == "Volume Constrained" else 0
+
+            target_budget_removal_year = annual_limit * (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed)) if 'technical removal' in all_types or 'natural removal' in all_types else 0
+            target_budget_reduction_year = annual_limit * (1 - (removal_target * ((year - 2024) / years)**(0.5 + 0.1 * transition_speed))) if 'reduction' in all_types and ('technical removal' in all_types or 'natural removal' in all_types) else annual_limit if only_reductions and constraint_type == "Budget Constrained" else 0
 
             allocated_removal_volume_year = 0
             allocated_reduction_volume_year = 0
             allocated_cost_removal_year = 0
             allocated_cost_reduction_year = 0
+            met_removal_target = False
 
-            # Allocate Removals (if any selected)
-            available_removals = pd.concat([project_types.get(rt, pd.DataFrame()) for rt in removal_types]).copy()
-            volume_col = f"available volume {year_str}"
-            price_col = f"price {year_str}"
+            # Allocate Removals with Preference
+            for removal_type, preference in [('natural removal', natural_preference_factor), ('technical removal', removal_preference_factor)]:
+                available_projects_type = project_types.get(removal_type, pd.DataFrame()).copy()
+                volume_col = f"available volume {year_str}"
+                price_col = f"price {year_str}"
 
-            if not available_removals.empty and volume_col in available_removals.columns and price_col in available_removals.columns:
-                available_removals = available_removals[pd.notna(available_removals[volume_col]) & (available_removals[volume_col] > 0)].sort_values(by=['priority' if 'priority' in available_removals.columns else price_col, price_col], ascending=[False if 'priority' in available_removals.columns else True, True])
+                if not available_projects_type.empty and volume_col in available_projects_type.columns and price_col in available_projects_type.columns:
+                    available_projects_type = available_projects_type[pd.notna(available_projects_type[volume_col]) & (available_projects_type[volume_col] > 0)].sort_values(by=['priority' if 'priority' in available_projects_type.columns else price_col, price_col], ascending=[False if 'priority' in available_projects_type.columns else True, True])
 
-                if constraint_type == "Volume Constrained":
-                    for _, project in available_removals.iterrows():
-                        can_allocate = min(target_removal_volume_year - allocated_removal_volume_year, project.get(volume_col, 0))
-                        if can_allocate > 0:
-                            allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
-                            allocated_removal_volume_year += can_allocate
-                            total_allocated_volume += can_allocate
-                            if allocated_removal_volume_year >= target_removal_volume_year:
-                                break
-                elif constraint_type == "Budget Constrained":
-                    for _, project in available_removals.iterrows():
-                        affordable_volume = (target_budget_removal_year - allocated_cost_removal_year) / (project.get(price_col, 0) + 1e-9)
-                        can_allocate = min(affordable_volume, project.get(volume_col, 0))
-                        cost = can_allocate * project.get(price_col, 0)
-                        if cost > 0:
-                            allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
-                            allocated_cost_removal_year += cost
-                            total_allocated_volume += can_allocate
-                            total_allocated_cost += cost
-                            if allocated_cost_removal_year >= target_budget_removal_year:
+                    if constraint_type == "Volume Constrained" and not met_removal_target:
+                        target_volume_type = target_removal_volume_year * preference
+                        allocated_volume_type = 0
+                        for _, project in available_projects_type.iterrows():
+                            can_allocate = min(target_volume_type - allocated_volume_type, project.get(volume_col, 0))
+                            if can_allocate > 0:
+                                allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
+                                allocated_removal_volume_year += can_allocate
+                                allocated_volume_type += can_allocate
+                                total_allocated_volume += can_allocate
+                                if allocated_removal_volume_year >= target_removal_volume_year:
+                                    met_removal_target = True
+                                    break
+                            if allocated_volume_type >= target_volume_type:
                                 break
 
-            # Allocate Reductions (if any selected)
+                    elif constraint_type == "Budget Constrained" and not met_removal_target:
+                        target_budget_type = target_budget_removal_year * preference
+                        allocated_cost_type = 0
+                        for _, project in available_projects_type.iterrows():
+                            affordable_volume = (target_budget_type - allocated_cost_type) / (project.get(price_col, 0) + 1e-9)
+                            can_allocate = min(affordable_volume, project.get(volume_col, 0))
+                            cost = can_allocate * project.get(price_col, 0)
+                            if cost > 0:
+                                allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
+                                allocated_cost_removal_year += cost
+                                total_allocated_volume += can_allocate
+                                total_allocated_cost += cost
+                                allocated_cost_type += cost
+                                if allocated_cost_removal_year >= target_budget_removal_year:
+                                    met_removal_target = True
+                                    break
+                            if allocated_cost_type >= target_budget_type:
+                                break
+
+            # Check if removal target was met, if not, try to fulfill with the other type
+            if not met_removal_target and ('technical removal' in all_types and 'natural removal' in all_types):
+                remaining_removal_target_volume = target_removal_volume_year - allocated_removal_volume_year if constraint_type == "Volume Constrained" else 0
+                remaining_removal_target_budget = target_budget_removal_year - allocated_cost_removal_year if constraint_type == "Budget Constrained" else 0
+
+                alternative_removal_types = [t for t in removal_types if t not in [('natural removal', natural_preference_factor)[0] if natural_preference_factor >= removal_preference_factor else ('technical removal', removal_preference_factor)[0]]]
+                if alternative_removal_types:
+                    alternative_type = alternative_removal_types[0]
+                    available_alternative = project_types.get(alternative_type, pd.DataFrame()).copy()
+                    if not available_alternative.empty and volume_col in available_alternative.columns and price_col in available_alternative.columns:
+                        available_alternative = available_alternative[pd.notna(available_alternative[volume_col]) & (available_alternative[volume_col] > 0)].sort_values(by=['priority' if 'priority' in available_alternative.columns else price_col, price_col], ascending=[False if 'priority' in available_alternative.columns else True, True])
+                        if constraint_type == "Volume Constrained":
+                            for _, project in available_alternative.iterrows():
+                                can_allocate = min(remaining_removal_target_volume, project.get(volume_col, 0))
+                                if can_allocate > 0:
+                                    allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
+                                    allocated_removal_volume_year += can_allocate
+                                    total_allocated_volume += can_allocate
+                                    if allocated_removal_volume_year >= target_removal_volume_year:
+                                        break
+                        elif constraint_type == "Budget Constrained":
+                            for _, project in available_alternative.iterrows():
+                                affordable_volume = (remaining_removal_target_budget) / (project.get(price_col, 0) + 1e-9)
+                                can_allocate = min(affordable_volume, project.get(volume_col, 0))
+                                cost = can_allocate * project.get(price_col, 0)
+                                if cost > 0:
+                                    allocated_projects[project['project name']] = {'volume': can_allocate, 'price': project.get(price_col, 0), 'type': project['project type']}
+                                    allocated_cost_removal_year += cost
+                                    total_allocated_volume += can_allocate
+                                    total_allocated_cost += cost
+                                    if allocated_cost_removal_year >= target_budget_removal_year:
+                                        break
+
+            if allocated_removal_volume_year < target_removal_volume_year and ('technical removal' in all_types or 'natural removal' in all_types):
+                st.warning(f"Not enough removal volume available in {year} to meet the target of {target_removal_volume_year:.2f} tonnes. Achieved: {allocated_removal_volume_year:.2f} tonnes.")
+            elif allocated_cost_removal_year < target_budget_removal_year and ('technical removal' in all_types or 'natural removal' in all_types):
+                st.warning(f"Not enough removal budget available in {year} (€{target_budget_removal_year:.2f}) to potentially meet the removal target. Spent: €{allocated_cost_removal_year:.2f}.")
+
+            # Allocate Reductions
             available_reductions = project_types.get('reduction', pd.DataFrame()).copy()
             if not available_reductions.empty and volume_col in available_reductions.columns and price_col in available_reductions.columns:
                 available_reductions = available_reductions[pd.notna(available_reductions[volume_col]) & (available_reductions[volume_col] > 0)].sort_values(by=['priority' if 'priority' in available_reductions.columns else price_col, price_col], ascending=[False if 'priority' in available_reductions.columns else True, True])
