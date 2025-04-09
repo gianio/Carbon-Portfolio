@@ -624,43 +624,28 @@ if df_upload:
             else:
                 st.info(f"No projects allocated for the year {year} to display a pie chart.")
 
-# --- Single Nested Pie Chart (Aggregated by Year and Individual Project) ---
-        st.subheader("Portfolio Composition by Year and Project")
+# --- Single Sunburst Chart (Year -> Project -> Volume) ---
+        st.subheader("Portfolio Composition by Year and Project (Sunburst Chart)")
         if not portfolio_df.empty:
-            fig_nested_projects = go.Figure()
+            fig_sunburst = go.Figure(data=[go.Sunburst(
+                labels=portfolio_df['project name'],
+                parents=portfolio_df['year'].astype(str),
+                values=portfolio_df['volume'],
+                branchvalues="total",
+                outsidetextinfo='percent+value',
+                insidetextorientation='radial',
+                marker=dict(line=dict(color='white', width=0.5)),
+                # Customize colors if needed based on project type or year
+                # marker=dict(colors=...)
+            )])
 
-            # Get unique years for creating outer segments
-            unique_years = sorted(portfolio_df['year'].unique())
+            fig_sunburst.update_layout(margin=dict(t=0, l=0, r=0, b=0))
+            st.plotly_chart(fig_sunburst, use_container_width=True)
 
-            # Define a color scale for years (you can customize this)
-            year_colors = {year: f'hsl({(i/len(unique_years))*360}, 70%, 70%)' for i, year in enumerate(unique_years)}
-
-            # Iterate through each year to create outer segments
-            for year in unique_years:
-                year_data = portfolio_df[portfolio_df['year'] == year]
-                if not year_data.empty:
-                    fig_nested_projects.add_trace(go.Pie(
-                        labels=year_data['project name'],
-                        values=year_data['volume'],
-                        domain=dict(column=0),
-                        name=str(year),
-                        hoverinfo='label+percent+value+name',
-                        textinfo='none',
-                        insidetextorientation='radial',
-                        marker=dict(line=dict(color='white', width=0.5)),
-                        showlegend=False
-                    ))
-
-            fig_nested_projects.update_layout(
-                grid=dict(rows=1, columns=1),
-                margin=dict(l=20, r=20, t=40, b=20)
-            )
-            st.plotly_chart(fig_nested_projects, use_container_width=True)
-
-            st.caption("Outer segments represent individual projects, grouped by year.")
+            st.caption("Sunburst chart showing portfolio composition. Inner levels represent years, and outer levels represent individual projects with their volume contribution.")
 
         else:
-            st.info("No projects allocated to display the nested pie chart by individual project.")
+            st.info("No projects allocated to display the sunburst chart.")
         
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
