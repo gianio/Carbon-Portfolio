@@ -606,19 +606,30 @@ if df_upload:
 
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
+
+
         # --- Single Sunburst Chart (Year -> Project -> Volume) ---
         st.subheader("Portfolio Composition by Year and Project (Sunburst Chart)")
         if not portfolio_df.empty:
-            # Handle potential NaN values (fill with a placeholder or remove)
-            portfolio_df_cleaned = portfolio_df.fillna({'project name': 'Unknown Project', 'year': 'Unknown Year', 'volume': 0})
+            labels_sunburst = portfolio_df['project name'].astype(str).tolist()
+            parents_sunburst = portfolio_df['year'].astype(str).tolist()
+            values_sunburst = portfolio_df['volume'].tolist()
 
-            # Ensure 'year' is a string
-            portfolio_df_cleaned['year'] = portfolio_df_cleaned['year'].astype(str)
+            st.subheader("Debugging Sunburst Data")
+            st.write("Labels:", labels_sunburst[:5])  # Show first 5
+            st.write("Parents:", parents_sunburst[:5])
+            st.write("Values:", values_sunburst[:5])
+            st.write("Length of Labels:", len(labels_sunburst))
+            st.write("Length of Parents:", len(parents_sunburst))
+            st.write("Length of Values:", len(values_sunburst))
+            st.write("Data type of Values:", type(values_sunburst[0]) if values_sunburst else None)
+            st.write("Are there NaNs in Values?", any(pd.isna(v) for v in values_sunburst))
+            st.write("Are there non-numeric values in Values?", any(not isinstance(v, (int, float)) for v in values_sunburst))
 
             fig_sunburst = go.Figure(data=[go.Sunburst(
-                labels=portfolio_df_cleaned['project name'],
-                parents=portfolio_df_cleaned['year'],
-                values=portfolio_df_cleaned['volume'],
+                labels=labels_sunburst,
+                parents=parents_sunburst,
+                values=values_sunburst,
                 branchvalues="total",
                 outsidetextinfo='percent+value',
                 insidetextorientation='radial',
