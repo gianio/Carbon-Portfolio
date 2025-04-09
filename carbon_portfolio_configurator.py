@@ -287,4 +287,14 @@ if df:
 
             if st.checkbox("Show raw project allocations"):
                 full_table = []
-                for year, projects in portfolio.
+                for year, projects in portfolio.items():
+                    for name, info in projects.items():
+                        full_table.append({
+                            'year': year,
+                            'project name': name,
+                            'type': info['type'],
+                            'volume': info['volume'],
+                            'price': info['price'],
+                            'cost': info['volume'] * info['price']
+                        })
+                st.dataframe(pd.DataFrame(full_table))
