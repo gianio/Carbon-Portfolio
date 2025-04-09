@@ -10,6 +10,8 @@ st.markdown("""
     <style>
     body {
         background-color: #F0F2F6; /* Lighter grey background */
+        font-family: sans-serif; /* Example: Use a sans-serif font */
+        font-size: 16px; /* Example: Set a base font size */
     }
     .stApp {
         background-color: #F0F2F6;
@@ -23,6 +25,8 @@ st.markdown("""
         border-bottom: 2px solid #AED581; /* Green underline for subheaders */
         padding-bottom: 5px;
         margin-top: 20px;
+        font-family: calibr; /* Example: Use a calibri font for subheaders */
+        font-size: 24px; /* Example: Set a larger font size for subheaders */
     }
     </style>
 """, unsafe_allow_html=True)
