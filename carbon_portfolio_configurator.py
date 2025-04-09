@@ -624,33 +624,41 @@ if df_upload:
             else:
                 st.info(f"No projects allocated for the year {year} to display a pie chart.")
 
-        # --- Alternative Nested Pie Chart (Aggregated by Type) ---
-        st.subheader("Annual Portfolio Composition by Type")
-        for year in selected_years:
-            year_data = portfolio_df[portfolio_df['year'] == year]
-            if not year_data.empty:
-                type_volume = year_data.groupby('type')['volume'].sum().reset_index()
+# --- Single Nested Pie Chart (Aggregated by Year and Type) ---
+        st.subheader("Portfolio Composition by Year and Type")
+        if not portfolio_df.empty:
+            year_type_volume = portfolio_df.groupby(['year', 'type'])['volume'].sum().reset_index()
 
-                # Create a mapping for consistent colors
-                color_map_pie = {
-                    'technical removal': '#64B5F6',
-                    'natural removal': '#81C784',
-                    'reduction': '#B0BEC5',
-                }
-                colors = [color_map_pie.get(t, '#D3D3D3') for t in type_volume['type']]
+            # Define colors for different project types
+            color_map_nested = {
+                'technical removal': '#64B5F6',
+                'natural removal': '#81C784',
+                'reduction': '#B0BEC5',
+            }
 
-                fig_nested_pie = go.Figure(data=[go.Pie(
-                    labels=type_volume['type'],
-                    values=type_volume['volume'],
-                    marker_colors=colors,
-                    hoverinfo='label+percent',
-                    textinfo='value',
-                    insidetextorientation='radial'
-                )])
-                st.markdown(f"**{year} Portfolio Composition (by Volume - Aggregated by Type)**")
-                st.plotly_chart(fig_nested_pie, use_container_width=True)
-            else:
-                st.info(f"No projects allocated for the year {year} to display a type-aggregated pie chart.")
+            # Create a mapping for consistent order of types
+            type_order = ['reduction', 'natural removal', 'technical removal']
+            year_type_volume['type'] = pd.Categorical(year_type_volume['type'], categories=type_order, ordered=True)
+            year_type_volume = year_type_volume.sort_values('type')
+
+            fig_nested = go.Figure(data=[go.Pie(
+                labels=year_type_volume['type'],
+                values=year_type_volume['volume'],
+                hole=.3,
+                hoverinfo='label+percent+value',
+                textinfo='value',
+                insidetextorientation='radial',
+                marker=dict(colors=[color_map_nested.get(t, '#D3D3D3') for t in year_type_volume['type']]),
+                pull=[0] * len(year_type_volume) # No pull
+            )])
+
+            fig_nested.update_layout(
+                annotations=[dict(text='Total<br>Volume', x=0.5, y=0.5, font_size=20, showarrow=False)]
+            )
+
+            st.plotly_chart(fig_nested, use_container_width=True)
+        else:
+            st.info("No projects allocated to display the nested pie chart.")
         
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
