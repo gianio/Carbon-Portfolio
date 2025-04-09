@@ -137,6 +137,7 @@ if df_upload:
             # Check if essential columns exist for the current year
             if volume_col not in selected_df.columns or price_col not in selected_df.columns:
                 allocation_warnings.append(f"Warning for {year}: Missing '{volume_col}' or '{price_col}' column. Skipping allocation for this year.")
+                portfolio[year] = {} # Ensure entry exists even if skipped
                 continue # Skip allocation for this year
 
             # Prepare DataFrame for this year's allocation
@@ -145,20 +146,24 @@ if df_upload:
 
             # Convert volume and price to numeric, handle errors/NaNs
             year_df['volume'] = pd.to_numeric(year_df['volume'], errors='coerce').fillna(0)
-            year_df['price'] = pd.to_numeric(year_df['price'], errors='coerce') # Keep NaN price for now, handle in allocation
+            year_df['price'] = pd.to_numeric(year_df['price'], errors='coerce') # Keep NaN price for now
 
-             # Filter out projects with zero volume or invalid price for the year (unless budget constrained, where 0 price might be ok)
-            if constraint_type == "Volume Constrained":
-                 year_df = year_df[(year_df['volume'] > 0) & pd.notna(year_df['price'])]
-            else: # Budget Constrained - Allow 0 price, but still need volume
-                 year_df = year_df[(year_df['volume'] > 0) & pd.notna(year_df['price'])] # Also filter NaN prices here
+            # Filter out projects with zero volume or invalid price for the year
+            # Keep projects with NaN price if budget constrained (might be free?) - No, filter NaNs always.
+            year_df = year_df[(year_df['volume'] > 0) & pd.notna(year_df['price'])]
 
             if year_df.empty:
                 allocation_warnings.append(f"Warning for {year}: No projects with available volume and valid price found.")
+                portfolio[year] = {}
                 continue
 
             # --- Year Specific Calculations ---
             annual_limit = annual_constraints.get(year, 0)
+            if annual_limit <= 0: # Skip year if constraint is zero or negative
+                 allocation_warnings.append(f"Note for {year}: Annual constraint is zero or less. No allocation performed.")
+                 portfolio[year] = {}
+                 continue
+
             total_allocated_volume_year = 0.0
             total_allocated_cost_year = 0.0
             allocated_projects_this_year = {} # { name: {'volume': v, 'price': p, 'type': t} }
@@ -166,10 +171,19 @@ if df_upload:
             # Calculate target split for removals/reductions based on transition
             year_fraction = (year_idx + 1) / years
             current_removal_target_fraction = removal_target * (year_fraction ** (0.5 + 0.1 * transition_speed))
-            if only_reductions:
+
+            # --- Determine if only removals are selected FOR THIS YEAR'S available projects ---
+            current_year_types = year_df['project type'].unique().tolist()
+            current_has_removals = any(t in ['technical removal', 'natural removal'] for t in current_year_types)
+            current_has_reductions = 'reduction' in current_year_types
+            current_only_removals = current_has_removals and not current_has_reductions
+            current_only_reductions = not current_has_removals and current_has_reductions
+            # ---
+
+            if current_only_reductions:
                  current_removal_target_fraction = 0.0
-            elif only_removals:
-                 current_removal_target_fraction = 1.0
+            elif current_only_removals:
+                 current_removal_target_fraction = 1.0 # Target is 100% removals
 
             target_removal_alloc = annual_limit * current_removal_target_fraction
             target_reduction_alloc = annual_limit * (1.0 - current_removal_target_fraction)
@@ -185,48 +199,65 @@ if df_upload:
             # Allocate based on preferences and calculated targets, but don't exceed annual_limit
 
             # 1.a Allocate Removals (respecting preference)
-            if has_removals:
+            if current_has_removals and not removals_df.empty:
                 removal_pref_factor = removal_preference / 10.0
+                # These preference targets are mainly for the mixed scenario
                 natural_pref_target = target_removal_alloc * (1.0 - removal_pref_factor)
                 technical_pref_target = target_removal_alloc * removal_pref_factor
 
                 # Determine allocation order based on preference slider
-                removal_order = [('natural removal', natural_pref_target), ('technical removal', technical_pref_target)]
+                removal_order_types = ['natural removal', 'technical removal']
                 if removal_preference > 5:
-                    removal_order.reverse() # Prioritize technical if slider > 5
+                    removal_order_types.reverse() # Prioritize technical if slider > 5
 
-                current_removal_allocated = 0.0 # Track allocation towards removal target
+                current_removal_allocated_value = 0.0 # Track value (volume or cost) allocated towards the removal target specifically
 
-                for r_type, r_target in removal_order:
+                for r_type in removal_order_types:
                     if r_type not in removals_df['project type'].unique(): continue
 
-                    type_df = removals_df[removals_df['project type'] == r_type]
+                    type_df = removals_df[removals_df['project type'] == r_type].copy() # Use copy to avoid SettingWithCopyWarning if modifying later
 
                     for idx, project in type_df.iterrows():
+                        # Check if overall limit is already reached before processing project
+                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
+                            break # Stop allocating this type if overall limit hit
+
                         project_name = project['project name']
-                        available_vol = project['volume']
+                        # Use .loc to get potentially updated volume if same project appears multiple times (shouldn't happen with unique names)
+                        available_vol = year_df.loc[idx, 'volume'] # Get current available volume
                         price = project['price']
-                        
+
+                        if available_vol < 1e-6: continue # Skip if volume already exhausted
+
                         # Calculate how much *can* be allocated based on constraints
                         vol_to_allocate = 0.0
 
                         if constraint_type == "Volume Constrained":
-                            # Limit by: remaining project vol, remaining type target, remaining overall annual limit
-                            remaining_type_target = max(0, r_target - current_removal_allocated) # How much more needed for *this* removal type's target
                             remaining_overall_limit = max(0, annual_limit - total_allocated_volume_year)
-                            vol_to_allocate = min(available_vol, remaining_type_target, remaining_overall_limit)
+                            # **MODIFICATION for only_removals:** Don't limit by sub-type target if only removals exist
+                            if current_only_removals:
+                                vol_to_allocate = min(available_vol, remaining_overall_limit)
+                            else:
+                                # Original logic for mixed portfolio (limit by sub-target AND overall)
+                                remaining_type_target_vol = max(0, target_removal_alloc - current_removal_allocated_value) # How much more needed for *overall* removal target
+                                vol_to_allocate = min(available_vol, remaining_type_target_vol, remaining_overall_limit)
+                                # Note: We previously used r_target (type-specific target), now using overall removal target here too for simplicity.
 
                         else: # Budget Constrained
-                             # Limit by: remaining project vol, remaining type target budget, remaining overall annual budget
-                            cost_of_unit = price if price > 0 else 0 # Handle price=0
-                            remaining_type_target_budget = max(0, r_target - total_allocated_cost_year) # Rough estimate, refine below
+                            cost_of_unit = price if price > 0 else 0
                             remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
-                            
-                            affordable_vol_type = (remaining_type_target_budget / (cost_of_unit + 1e-9)) # Volume affordable within type budget
-                            affordable_vol_overall = (remaining_overall_budget / (cost_of_unit + 1e-9)) # Volume affordable within overall budget
-                            
-                            vol_to_allocate = min(available_vol, affordable_vol_type, affordable_vol_overall)
-                        
+                            affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9)
+
+                            # **MODIFICATION for only_removals:** Don't limit by sub-type target budget if only removals exist
+                            if current_only_removals:
+                                vol_to_allocate = min(available_vol, affordable_vol_overall)
+                            else:
+                                # Original logic for mixed portfolio
+                                remaining_type_target_budget = max(0, target_removal_alloc - total_allocated_cost_year) # How much budget left for *all* removals
+                                affordable_vol_type = remaining_type_target_budget / (cost_of_unit + 1e-9)
+                                vol_to_allocate = min(available_vol, affordable_vol_type, affordable_vol_overall)
+
                         # Clean up potential floating point issues for very small amounts
                         if vol_to_allocate < 1e-6 : vol_to_allocate = 0.0
 
@@ -236,50 +267,57 @@ if df_upload:
                             # Update totals
                             total_allocated_volume_year += vol_to_allocate
                             total_allocated_cost_year += cost
-                            current_removal_allocated += vol_to_allocate # Or cost if budget constrained? - Let's track volume for target comparison
+                            # Update value allocated specifically to removals
+                            current_removal_allocated_value += vol_to_allocate if constraint_type == "Volume Constrained" else cost
 
-                            # Store allocation (update if project already partially allocated)
+                            # Store allocation (update if project already partially allocated - shouldn't happen with this loop structure)
                             if project_name not in allocated_projects_this_year:
                                 allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
                             allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
 
-                            # Reduce available volume for this project (for Phase 2)
+                            # Reduce available volume for this project IN THE MAIN year_df (for Phase 2)
                             year_df.loc[idx, 'volume'] -= vol_to_allocate
 
-                        # Check if overall limit is reached
-                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
-                            break # Stop allocating this type if overall limit hit
-                    # Check again after finishing a type
+                    # Check again after finishing a type if overall limit hit
                     if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
                        (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
-                        break # Stop allocating removals if overall limit hit
+                        break # Stop allocating more removal types if overall limit hit
 
-            # 1.b Allocate Reductions
-            if has_reductions and not reductions_df.empty:
+            # 1.b Allocate Reductions (Only if reductions exist and limit not met)
+            if current_has_reductions and not reductions_df.empty:
                  # Check if overall limit is already reached before starting reductions
                  if not ((constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
                          (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)):
 
                     for idx, project in reductions_df.iterrows():
+                         # Check overall limit before each project
+                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
+                            break
+
                         project_name = project['project name']
-                        available_vol = project['volume']
+                        available_vol = year_df.loc[idx, 'volume'] # Get current remaining volume
                         price = project['price']
-                        
+
+                        if available_vol < 1e-6: continue
+
                         vol_to_allocate = 0.0
-                        
+
                         if constraint_type == "Volume Constrained":
                              remaining_overall_limit = max(0, annual_limit - total_allocated_volume_year)
-                             # Optional: Limit by target_reduction_alloc as well? User wants to meet constraint first.
-                             # remaining_reduction_target = max(0, target_reduction_alloc - (total_allocated_volume_year - current_removal_allocated)) # Rough idea of reduction allocated so far
-                             vol_to_allocate = min(available_vol, remaining_overall_limit) # Prioritize overall limit
+                             # In Phase 1 for reductions, we are limited by the remaining *overall* limit AND the reduction target
+                             remaining_reduction_target_vol = max(0, target_reduction_alloc - (total_allocated_volume_year - current_removal_allocated_value)) # Volume target for reductions
+                             vol_to_allocate = min(available_vol, remaining_overall_limit, remaining_reduction_target_vol)
 
                         else: # Budget Constrained
                              cost_of_unit = price if price > 0 else 0
                              remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
                              affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9)
-                             vol_to_allocate = min(available_vol, affordable_vol_overall) # Prioritize overall limit
-                        
+                             # Limited by remaining overall budget and reduction target budget
+                             remaining_reduction_target_budget = max(0, target_reduction_alloc - (total_allocated_cost_year - current_removal_allocated_value))# Budget target for reductions
+                             affordable_vol_reduction_target = remaining_reduction_target_budget / (cost_of_unit + 1e-9)
+                             vol_to_allocate = min(available_vol, affordable_vol_overall, affordable_vol_reduction_target)
+
                         if vol_to_allocate < 1e-6 : vol_to_allocate = 0.0
 
                         if vol_to_allocate > 0:
@@ -291,10 +329,6 @@ if df_upload:
                                 allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
                             allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
                             year_df.loc[idx, 'volume'] -= vol_to_allocate
-
-                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
-                            break # Stop reductions if overall limit hit
 
 
             # --- PHASE 2: Gap Filling ---
@@ -308,11 +342,17 @@ if df_upload:
                 remaining_projects_df = year_df[year_df['volume'] > 1e-6].sort_values(by=['priority', 'price'], ascending=[False, True])
 
                 if not remaining_projects_df.empty:
+                    # allocation_warnings.append(f"Debug for {year}: Entering Phase 2. Limit not met ({total_allocated_volume_year if constraint_type=='Volume Constrained' else total_allocated_cost_year} / {annual_limit}).") # Optional debug
                     for idx, project in remaining_projects_df.iterrows():
+                        # Check limit before each project
+                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
+                            break
+
                         project_name = project['project name']
-                        available_vol = project['volume'] # Remaining volume from Phase 1
+                        available_vol = project['volume'] # Remaining volume from year_df
                         price = project['price']
-                        
+
                         vol_to_allocate = 0.0
 
                         if constraint_type == "Volume Constrained":
@@ -325,35 +365,38 @@ if df_upload:
                             vol_to_allocate = min(available_vol, affordable_vol_overall)
 
                         if vol_to_allocate < 1e-6 : vol_to_allocate = 0.0
-                            
+
                         if vol_to_allocate > 0:
                             cost = vol_to_allocate * price
                             total_allocated_volume_year += vol_to_allocate
                             total_allocated_cost_year += cost
 
+                            # Add or update allocation for this project
                             if project_name not in allocated_projects_this_year:
                                 allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
                             allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
-                            # No need to decrement year_df volume here, just tracking totals
-
-                        # Check if limit met after this allocation
-                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
-                            break # Stop gap filling
+                            # We don't strictly need to decrement year_df volume in phase 2, but good practice:
+                            # year_df.loc[idx, 'volume'] -= vol_to_allocate # careful if project listed multiple times
 
             # Store final allocation for the year
             portfolio[year] = allocated_projects_this_year
 
             # Add warning if constraint still not met after both phases (due to lack of available projects)
-            final_limit_met = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                              (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
+            final_limit_met = (constraint_type == "Volume Constrained" and abs(total_allocated_volume_year - annual_limit) < 1e-6) or \
+                              (constraint_type == "Budget Constrained" and abs(total_allocated_cost_year - annual_limit) < 1e-6)
+            # Also check if we allocated *something* if the limit was > 0
+            limit_partially_met = (total_allocated_volume_year > 1e-6) if constraint_type == "Volume Constrained" else (total_allocated_cost_year > 1e-6)
 
-            if not final_limit_met and annual_limit > 0:
+
+            if not final_limit_met and annual_limit > 0 and not limit_partially_met:
+                 # Special case: No projects allocated at all, likely due to filtering or 0 available
+                  allocation_warnings.append(f"Warning for {year}: Could not allocate *any* volume/budget towards the target of {annual_limit:.2f}. Check project availability and prices for this year.")
+            elif not final_limit_met and annual_limit > 0:
+                 # Standard case: Allocated some, but couldn't meet the full target
                  if constraint_type == "Volume Constrained":
-                      allocation_warnings.append(f"Warning for {year}: Could not meet target volume of {annual_limit:.0f} tonnes. Allocated {total_allocated_volume_year:.2f} tonnes due to insufficient project availability.")
+                      allocation_warnings.append(f"Warning for {year}: Could only allocate {total_allocated_volume_year:.2f} tonnes out of the target {annual_limit:.0f} tonnes due to insufficient project availability.")
                  else:
-                      allocation_warnings.append(f"Warning for {year}: Could not meet target budget of €{annual_limit:.2f}. Spent €{total_allocated_cost_year:.2f} due to insufficient affordable project volume.")
-
+                      allocation_warnings.append(f"Warning for {year}: Could only spend €{total_allocated_cost_year:.2f} out of the target budget €{annual_limit:.2f} due to insufficient affordable project volume.")
 
         # --- Display Warnings ---
         if allocation_warnings:
