@@ -45,7 +45,7 @@ if df:
     # Identify price columns based on the selected years
     price_cols = [f"price {year}" for year in selected_years if f"price {year}" in data.columns]
     # Calculate the average price across the selected years
-    overview['avg_price'] = overview[price_cols].mean(axis=1).apply(lambda x: round(x * 2) / 2)
+    overview['avg_price'] = overview[price_cols].mean(axis=1)
     # Display the project overview DataFrame, including description if available
     if 'description' in overview.columns:
         st.dataframe(overview[['project name', 'project type', 'description', 'avg_price']].drop_duplicates())
