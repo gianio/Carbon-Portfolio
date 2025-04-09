@@ -607,7 +607,6 @@ if df_upload:
 
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
-
 # --- Nested Pie Chart (Project Type -> Project) - Matplotlib - Attempt 3 ---
         st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Matplotlib")
         if not portfolio_df.empty:
@@ -656,7 +655,7 @@ if df_upload:
             st.caption("Nested pie chart showing portfolio composition using Matplotlib.")
 
         else:
-            st.info("No
+            st.info("No projects allocated to display the nested volume chart.")
     
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
