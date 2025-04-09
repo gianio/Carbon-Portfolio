@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import seaborn as sns  # For potentially more appealing styles
 
 # Set Streamlit page config with light green background via HTML/CSS
@@ -184,33 +186,28 @@ if df:
             avg_prices.append(total_cost / annual_volume if annual_volume > 0 else 0)
 
         st.subheader("Portfolio Composition & Price Over Time")
-        fig, ax1 = plt.subplots(figsize=(10, 6))
-        sns.set_theme(style="whitegrid")  # Apply a clean whitegrid style
-        green_palette = sns.color_palette("light:#558B2F", n_colors=3) # Define a green palette
-
-        bar_width = 0.6
-        x = np.arange(len(selected_years))
-
-        tech = composition_by_type['technical removal']
-        nat = composition_by_type['natural removal']
-        red = composition_by_type['reduction']
-
-        ax1.bar(x, tech, bar_width, label='Technical Removal', color=green_palette[0])
-        ax1.bar(x, nat, bar_width, bottom=tech, label='Natural Removal', color=green_palette[1])
-        ax1.bar(x, red, bar_width, bottom=np.array(tech) + np.array(nat), label='Reduction', color=green_palette[2])
-
-        ax1.set_xlabel('Year')
-        ax1.set_ylabel('Volume')
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(selected_years)
-        ax1.legend(loc='upper left')
-
-        ax2 = ax1.twinx()
-        ax2.plot(x, avg_prices, marker='o', color='black', label='Avg Price') # Use black for average price
-        ax2.set_ylabel('Average Price')
-        ax2.legend(loc='upper right')
-
-        st.pyplot(fig)
+        
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        # Bar chart for composition
+        fig.add_trace(go.Bar(x=selected_years, y=composition_by_type['technical removal'], name='Technical Removal', marker_color='#8BC34A'), secondary_y=False)
+        fig.add_trace(go.Bar(x=selected_years, y=composition_by_type['natural removal'], name='Natural Removal', marker_color='#AED581'), secondary_y=False)
+        fig.add_trace(go.Bar(x=selected_years, y=composition_by_type['reduction'], name='Reduction', marker_color='#C5E1A5'), secondary_y=False)
+        
+        # Line plot for average price
+        fig.add_trace(go.Scatter(x=selected_years, y=avg_prices, name='Average Price', marker=dict(symbol='circle'), line=dict(color='#558B2F')), secondary_y=True)
+        
+        # Update layout for better aesthetics
+        fig.update_layout(
+            xaxis_title='Year',
+            yaxis_title='Volume',
+            yaxis2_title='Average Price (€)',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            barmode='stack',
+            template="plotly_white" # Use a clean template
+        )
+        
+        st.plotly_chart(fig)
 
         final_tech = composition_by_type['technical removal'][-1]
         final_nat = composition_by_type['natural removal'][-1]
