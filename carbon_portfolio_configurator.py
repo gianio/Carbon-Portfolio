@@ -204,37 +204,36 @@ if df_upload:
     # Use columns for layout
     col1, col2 = st.columns([0.6, 0.4]) # Adjust column width ratio if needed
 
-    with col1:
-        st.markdown("**Annual Constraints:**")
-        # Display yearly inputs in a more compact way if many years
-        cols_per_year = st.columns(years if years <= 6 else 6) # Max 6 columns for inputs
-        col_idx = 0
-        if constraint_type == "Volume Constrained":
-            st.markdown("Enter annual purchase volumes (tonnes):")
-            # REMOVED global_volume input
-            for year in selected_years:
-                with cols_per_year[col_idx % len(cols_per_year)]:
-                    # Use year as default value for easier debugging if needed, otherwise 1000
-                    default_val = 1000
-                    annual_constraints[year] = st.number_input(f"{year}", min_value=0, step=100, value=default_val, key=f"vol_{year}", label_visibility="visible") # Show year label
-                col_idx += 1
-        else:
-            st.markdown("Enter annual budget (€):")
-            # REMOVED global_budget input
-            for year in selected_years:
-                 with cols_per_year[col_idx % len(cols_per_year)]:
-                    # Use year*10 as default value for easier debugging if needed, otherwise 10000
-                    default_val = 10000
-                    annual_constraints[year] = st.number_input(f"{year} (€)", min_value=0, step=1000, value=default_val, key=f"bud_{year}", label_visibility="visible") # Show year label
-                 col_idx += 1
+    st.markdown("**Annual Constraints:**")
+    # Display yearly inputs in a more compact way if many years
+    cols_per_year = st.columns(years if years <= 6 else 6) # Max 6 columns for inputs
+    col_idx = 0
+    if constraint_type == "Volume Constrained":
+        st.markdown("Enter annual purchase volumes (tonnes):")
+        # REMOVED global_volume input
+        for year in selected_years:
+            with cols_per_year[col_idx % len(cols_per_year)]:
+                # Use year as default value for easier debugging if needed, otherwise 1000
+                default_val = 1000
+                annual_constraints[year] = st.number_input(f"{year}", min_value=0, step=100, value=default_val, key=f"vol_{year}", label_visibility="visible") # Show year label
+            col_idx += 1
+    else:
+        st.markdown("Enter annual budget (€):")
+        # REMOVED global_budget input
+        for year in selected_years:
+             with cols_per_year[col_idx % len(cols_per_year)]:
+                # Use year*10 as default value for easier debugging if needed, otherwise 10000
+                default_val = 10000
+                annual_constraints[year] = st.number_input(f"{year} (€)", min_value=0, step=1000, value=default_val, key=f"bud_{year}", label_visibility="visible") # Show year label
+             col_idx += 1
 
-    with col2:
-        st.markdown("**Portfolio Strategy:**")
-        removal_target = st.slider(f"Target Removal % by {end_year}", 0, 100, 80, key="removal_target") / 100
-        transition_speed = st.slider("Transition Speed (1=Slow, 10=Fast)", 1, 10, 5, key="transition_speed")
-        # Make label clearer about slider direction
-        removal_preference = st.slider("Removal Preference (1=Natural Favored, 10=Technical Favored)", 1, 10, 5, key="removal_preference")
-        st.caption("Preference influences allocation order and targets in mixed portfolios.")
+    
+    st.markdown("**Portfolio Strategy:**")
+    removal_target = st.slider(f"Target Removal % by {end_year}", 0, 100, 80, key="removal_target") / 100
+    transition_speed = st.slider("Transition Speed (1=Slow, 10=Fast)", 1, 10, 5, key="transition_speed")
+    # Make label clearer about slider direction
+    removal_preference = st.slider("Removal Preference (1=Natural Favored, 10=Technical Favored)", 1, 10, 5, key="removal_preference")
+    st.caption("Preference influences allocation order and targets in mixed portfolios.")
 
 
     # --- Project Selection and Prioritization Section ---
