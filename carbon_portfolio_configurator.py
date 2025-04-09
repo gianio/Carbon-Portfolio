@@ -624,41 +624,43 @@ if df_upload:
             else:
                 st.info(f"No projects allocated for the year {year} to display a pie chart.")
 
-# --- Single Nested Pie Chart (Aggregated by Year and Type) ---
-        st.subheader("Portfolio Composition by Year and Type")
+# --- Single Nested Pie Chart (Aggregated by Year and Individual Project) ---
+        st.subheader("Portfolio Composition by Year and Project")
         if not portfolio_df.empty:
-            year_type_volume = portfolio_df.groupby(['year', 'type'])['volume'].sum().reset_index()
+            fig_nested_projects = go.Figure()
 
-            # Define colors for different project types
-            color_map_nested = {
-                'technical removal': '#64B5F6',
-                'natural removal': '#81C784',
-                'reduction': '#B0BEC5',
-            }
+            # Get unique years for creating outer segments
+            unique_years = sorted(portfolio_df['year'].unique())
 
-            # Create a mapping for consistent order of types
-            type_order = ['reduction', 'natural removal', 'technical removal']
-            year_type_volume['type'] = pd.Categorical(year_type_volume['type'], categories=type_order, ordered=True)
-            year_type_volume = year_type_volume.sort_values('type')
+            # Define a color scale for years (you can customize this)
+            year_colors = {year: f'hsl({(i/len(unique_years))*360}, 70%, 70%)' for i, year in enumerate(unique_years)}
 
-            fig_nested = go.Figure(data=[go.Pie(
-                labels=year_type_volume['type'],
-                values=year_type_volume['volume'],
-                hole=.3,
-                hoverinfo='label+percent+value',
-                textinfo='value',
-                insidetextorientation='radial',
-                marker=dict(colors=[color_map_nested.get(t, '#D3D3D3') for t in year_type_volume['type']]),
-                pull=[0] * len(year_type_volume) # No pull
-            )])
+            # Iterate through each year to create outer segments
+            for year in unique_years:
+                year_data = portfolio_df[portfolio_df['year'] == year]
+                if not year_data.empty:
+                    fig_nested_projects.add_trace(go.Pie(
+                        labels=year_data['project name'],
+                        values=year_data['volume'],
+                        domain=dict(column=0),
+                        name=str(year),
+                        hoverinfo='label+percent+value+name',
+                        textinfo='none',
+                        insidetextorientation='radial',
+                        marker=dict(line=dict(color='white', width=0.5)),
+                        showlegend=False
+                    ))
 
-            fig_nested.update_layout(
-                annotations=[dict(text='Total<br>Volume', x=0.5, y=0.5, font_size=20, showarrow=False)]
+            fig_nested_projects.update_layout(
+                grid=dict(rows=1, columns=1),
+                margin=dict(l=20, r=20, t=40, b=20)
             )
+            st.plotly_chart(fig_nested_projects, use_container_width=True)
 
-            st.plotly_chart(fig_nested, use_container_width=True)
+            st.caption("Outer segments represent individual projects, grouped by year.")
+
         else:
-            st.info("No projects allocated to display the nested pie chart.")
+            st.info("No projects allocated to display the nested pie chart by individual project.")
         
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
