@@ -607,14 +607,17 @@ if df_upload:
 
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
-# --- Nested Pie Chart (Project Type -> Project) - Final Attempt ---
-        st.subheader("Portfolio Composition by Project Type and Project (Total Volume)")
+# --- Nested Pie Chart (Project Type -> Project) - Renamed Projects ---
+        st.subheader("Portfolio Composition by Project Type and Project (Total Volume) - Renamed")
         if not portfolio_df.empty:
             # Aggregate total volume per project
             project_total_volume = portfolio_df.groupby(['project name', 'type'])['volume'].sum().reset_index()
             project_total_volume = project_total_volume.rename(columns={'volume': 'total_project_volume'})
 
-            labels_sunburst = project_total_volume['project name'].tolist()
+            # Assign generic project names
+            project_total_volume['generic_project_name'] = [f"Project {i+1}" for i in range(len(project_total_volume))]
+
+            labels_sunburst = project_total_volume['generic_project_name'].tolist()
             parents_sunburst = project_total_volume['type'].tolist()
             values_sunburst = project_total_volume['total_project_volume'].tolist()
 
@@ -631,7 +634,7 @@ if df_upload:
             fig_nested_volume.update_layout(margin=dict(t=0, l=0, r=0, b=0))
             st.plotly_chart(fig_nested_volume, use_container_width=True)
 
-            st.caption("Nested pie chart showing total allocated volume. Inner segments represent projects (size by total volume), and outer segments represent their project types.")
+            st.caption("Nested pie chart showing total allocated volume. Inner segments represent projects (renamed), and outer segments represent their project types.")
 
         else:
             st.info("No projects allocated to display the nested volume chart.")
