@@ -4,167 +4,146 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np # Added for potential NaN checks if needed
 
-# --- Define a new color palette ---
-primary_color = "#2E7D32"  # Dark Green
-secondary_color = "#4CAF50" # Medium Green
-accent_color = "#8BC34A"   # Light Green
-background_color = "#F0F8F0" # Very Light Green
-text_color = "#212121"     # Dark Grey
-
-def primary_color_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+# --- Define a nice green color palette ---
+primary_green = "#8BC34A" # Light Green
+secondary_green = "#689F38" # Medium Green
+background_green = "#F1F8E9" # Very Light Green
+text_green = "#33691E" # Dark Green
+accent_green = "#AED581" # Lime Green
 
 # --- Streamlit App Configuration ---
 st.set_page_config(layout="wide") # Optional: Use wider layout
 st.markdown(f"""
     <style>
     body {{
-        background-color: {background_color};
-        font-family: sans-serif; /* Default to system sans-serif, Calibri will be applied more specifically */
-        color: {text_color};
-        line-height: 1.4;
+        background-color: {background_green};
+        font-family: Calibri, sans-serif;
+        font-size: 20.8px; /* 16px * 1.3 */
+        color: {text_green};
     }}
     .stApp {{
-        background-color: {background_color};
+        background-color: {background_green};
     }}
     .stApp > header {{
-        margin-bottom: 1.5rem;
-        padding: 1rem 0;
-        background-color: rgba({', '.join(map(str, primary_color_rgb(primary_color)))}, 0.05); /* Subtle header background */
-        border-bottom: 1px solid {accent_color};
+        margin-bottom: 13px; /* 10px * 1.3 */
     }}
     h1 {{
-        color: {primary_color};
-        font-family: 'Calibri', sans-serif;
-        font-size: 2.5rem;
-        margin-bottom: 1rem;
+        color: {secondary_green};
+        font-family: Calibri, sans-serif;
+        font-size: 39px; /* 30px * 1.3 */
     }}
     h2 {{
-        color: {primary_color};
-        font-family: 'Calibri', sans-serif;
-        font-size: 1.8rem;
-        border-bottom: 2px solid {secondary_color};
-        padding-bottom: 0.5rem;
-        margin-top: 2rem;
+        border-bottom: 2.6px solid {accent_green}; /* 2px * 1.3 */
+        padding-bottom: 6.5px; /* 5px * 1.3 */
+        margin-top: 26px; /* 20px * 1.3 */
+        font-family: Calibri, sans-serif;
+        font-size: 31.2px; /* 24px * 1.3 */
+        color: {secondary_green};
     }}
     h3 {{
-        color: {primary_color};
-        font-family: 'Calibri', sans-serif;
-        font-size: 1.4rem;
-        margin-top: 1.5rem;
+        font-family: Calibri, sans-serif;
+        font-size: 26px; /* 20px * 1.3 */
+        color: {secondary_green};
     }}
-    p, div, stText, stMarkdown, stCaption, stNumberInput label, stSlider label, stFileUploader label, stMultiSelect label, stRadio label, stCheckbox label, .streamlit-expander {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.1rem !important;
-        color: {text_color} !important;
+    p, div, stText, stMarkdown, stCaption, stNumberInput label, stSlider label, stFileUploader label, stMultiSelect label, stRadio label, stCheckbox label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important; /* 16px * 1.3 */
+        color: {text_green} !important;
+    }}
+    .streamlit-expander {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
     }}
     .streamlit-expander-content {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.1rem !important;
-        color: {text_color} !important;
-        border-left: 0.2rem solid {accent_color};
-        padding-left: 1rem;
-        margin-top: 0.5rem;
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
     }}
     .stButton > button {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.1rem !important;
-        color: {text_color} !important;
-        border: 1px solid {secondary_color} !important;
-        background-color: {background_color} !important;
-        border-radius: 0.3rem;
-        padding: 0.6rem 1rem;
-        transition: background-color 0.3s ease, color 0.3s ease;
-    }}
-    .stButton > button:hover {{
-        background-color: {secondary_color} !important;
-        color: white !important;
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {secondary_green} !important;
+        background-color: {background_green} !important;
+        &:hover {{
+            background-color: {primary_green} !important;
+            color: white !important;
+        }}
     }}
     .stSlider > div[data-baseweb="slider"] > div[role="slider"]::before {{
-        background-color: {secondary_color} !important;
+        background-color: {primary_green} !important;
     }}
     .stSlider > div[data-baseweb="slider"] > div[role="slider"] > span {{
-        background-color: {primary_color} !important;
-        border-color: {primary_color} !important;
+        background-color: {secondary_green} !important;
+        border-color: {secondary_green} !important;
     }}
-    .stNumberInput > div > div > input, .stSelectbox > div > div > div > button, .stMultiSelect > div > div > div > button, .stFileUploader > div > div:first-child > div:first-child > label {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.1rem !important;
-        color: {text_color} !important;
-        border: 1px solid {accent_color} !important;
-        border-radius: 0.3rem;
-        padding: 0.5rem;
-        background-color: {background_color};
+    .stNumberInput > div > div > input {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
     }}
-    .stRadio > label, .stCheckbox > label {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.1rem !important;
-        color: {text_color} !important;
+    .stSelectbox > div > div > div > button {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
+    }}
+    .stMultiSelect > div > div > div > button {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
+    }}
+    .stRadio > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+    }}
+    .stCheckbox > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+    }}
+    .stFileUploader > div > div:first-child > div:first-child > label {{
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
+        background-color: {background_green} !important;
     }}
     .stDataFrame {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1rem !important;
-        color: {text_color} !important;
-        border: 1px solid {accent_color};
-        border-radius: 0.3rem;
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {text_green} !important;
+        border-color: {accent_green} !important;
     }}
     .stDataFrame tr th {{
-        background-color: {accent_color} !important;
-        color: {text_color} !important;
-        padding: 0.6rem;
-        font-weight: bold;
-    }}
-    .stDataFrame tr td {{
-        padding: 0.5rem;
+        background-color: {accent_green} !important;
+        color: {text_green} !important;
     }}
     .stMetric {{
-        background-color: white !important;
-        border: 1px solid {accent_color} !important;
-        padding: 1rem !important;
-        border-radius: 0.3rem !important;
-        box-shadow: 0 0.1rem 0.3rem rgba(0, 0, 0, 0.05);
+        background-color: {background_green} !important;
+        border: 1px solid {accent_green} !important;
+        padding: 15px !important;
+        border-radius: 5px !important;
     }}
     .stMetricLabel {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1rem !important;
-        color: {secondary_color} !important;
+        font-family: Calibri, sans-serif !important;
+        font-size: 20.8px !important;
+        color: {secondary_green} !important;
     }}
     .stMetricValue {{
-        font-family: 'Calibri', sans-serif !important;
-        font-size: 1.4rem !important;
-        color: {primary_color} !important;
-    }}
-    .stWarning {{
-        color: #FFC107;
-        background-color: #FFFDE7;
-        border-left: 0.3rem solid #FFEB3B;
-        padding: 0.8rem;
-        margin-bottom: 1rem;
-        border-radius: 0.3rem;
-    }}
-    .stError {{
-        color: #D32F2F;
-        background-color: #FFEBEE;
-        border-left: 0.3rem solid #F44336;
-        padding: 0.8rem;
-        margin-bottom: 1rem;
-        border-radius: 0.3rem;
-    }}
-    .stInfo {{
-        color: #1976D2;
-        background-color: #E3F2FD;
-        border-left: 0.3rem solid #2196F3;
-        padding: 0.8rem;
-        margin-bottom: 1rem;
-        border-radius: 0.3rem;
+        font-family: Calibri, sans-serif !important;
+        font-size: 26px !important;
+        color: {text_green} !important;
     }}
     </style>
 """, unsafe_allow_html=True)
-
-def primary_color_rgb(hex_color):
-    hex_color = hex_color.lstrip('#')
-    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
 st.title("🌱 Multi-Year Carbon Portfolio Builder")
 
@@ -195,18 +174,18 @@ if df_upload:
         overview['priority'] = 50 # Assign a neutral default priority
         # st.info("No 'priority' column found in CSV. Assigning a default priority of 50 to all projects.") # Less verbose
     else:
-        # Fill NaN priorities with default
+         # Fill NaN priorities with default
         overview['priority'] = overview['priority'].fillna(50)
 
     # Calculate average price only if price columns exist
     if price_cols:
         # Ensure price columns are numeric, coerce errors to NaN
         for col in price_cols:
-            overview[col] = pd.to_numeric(overview[col], errors='coerce')
+             overview[col] = pd.to_numeric(overview[col], errors='coerce')
         overview['avg_price'] = overview[price_cols].mean(axis=1)
         overview_display_cols = ['project name', 'project type']
         if 'description' in overview.columns:
-            overview_display_cols.append('description')
+             overview_display_cols.append('description')
         overview_display_cols.append('avg_price')
         st.dataframe(overview[overview_display_cols].drop_duplicates(subset=['project name']).reset_index(drop=True))
     else:
@@ -243,11 +222,11 @@ if df_upload:
             st.markdown("Enter annual budget (€):")
             # REMOVED global_budget input
             for year in selected_years:
-                with cols_per_year[col_idx % len(cols_per_year)]:
+                 with cols_per_year[col_idx % len(cols_per_year)]:
                     # Use year*10 as default value for easier debugging if needed, otherwise 10000
                     default_val = 10000
                     annual_constraints[year] = st.number_input(f"{year} (€)", min_value=0, step=1000, value=default_val, key=f"bud_{year}", label_visibility="visible") # Show year label
-                col_idx += 1
+                 col_idx += 1
 
     with col2:
         st.markdown("**Portfolio Strategy:**")
@@ -318,8 +297,8 @@ if df_upload:
             # --- Year Specific Calculations ---
             annual_limit = annual_constraints.get(year, 0)
             if annual_limit <= 0:
-                portfolio[year] = {}
-                continue # Skip year if constraint is zero
+                 portfolio[year] = {}
+                 continue # Skip year if constraint is zero
 
             total_allocated_volume_year = 0.0
             total_allocated_cost_year = 0.0
@@ -337,13 +316,13 @@ if df_upload:
             current_only_reductions = not current_has_removals and current_has_reductions
 
             if current_only_reductions:
-                current_removal_target_fraction = 0.0
+                 current_removal_target_fraction = 0.0
             elif current_only_removals:
-                current_removal_target_fraction = 1.0
+                 current_removal_target_fraction = 1.0
             elif not current_has_removals and not current_has_reductions:
-                # Should not happen if year_df is not empty, but safety check
-                portfolio[year] = {}
-                continue
+                 # Should not happen if year_df is not empty, but safety check
+                 portfolio[year] = {}
+                 continue
 
             target_removal_alloc = annual_limit * current_removal_target_fraction
             target_reduction_alloc = annual_limit * (1.0 - current_removal_target_fraction)
@@ -430,8 +409,8 @@ if df_upload:
 
             # 1.b Allocate Reductions (Only if reductions exist and limit not met)
             if current_has_reductions and not reductions_df.empty:
-                if not ((constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                        (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)):
+                 if not ((constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                         (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)):
                     for idx, project in reductions_df.iterrows():
                         if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
                            (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6): break
@@ -453,9 +432,9 @@ if df_upload:
 
 
                         if constraint_type == "Volume Constrained":
-                            vol_to_allocate = min(available_vol, remaining_overall_limit_vol, remaining_reduction_target_vol)
+                             vol_to_allocate = min(available_vol, remaining_overall_limit_vol, remaining_reduction_target_vol)
                         else: # Budget Constrained
-                            vol_to_allocate = min(available_vol, affordable_vol_overall, affordable_vol_reduction_target)
+                             vol_to_allocate = min(available_vol, affordable_vol_overall, affordable_vol_reduction_target)
 
                         if vol_to_allocate < 1e-6 : vol_to_allocate = 0.0
                         if vol_to_allocate > 0:
@@ -509,10 +488,10 @@ if df_upload:
             if not final_limit_met and annual_limit > 0:
                 limit_partially_met = (total_allocated_volume_year > 1e-6) if constraint_type == "Volume Constrained" else (total_allocated_cost_year > 1e-6)
                 if not limit_partially_met:
-                    allocation_warnings.append(f"Warning for {year}: Could not allocate *any* volume/budget towards the target of {annual_limit:.2f}. Check project availability and prices.")
+                     allocation_warnings.append(f"Warning for {year}: Could not allocate *any* volume/budget towards the target of {annual_limit:.2f}. Check project availability and prices.")
                 else:
-                    if constraint_type == "Volume Constrained": allocation_warnings.append(f"Warning for {year}: Could only allocate {total_allocated_volume_year:.2f} tonnes out of target {annual_limit:.0f} due to insufficient project availability.")
-                    else: allocation_warnings.append(f"Warning for {year}: Could only spend €{total_allocated_cost_year:.2f} out of target budget €{annual_limit:.2f} due to insufficient affordable project volume.")
+                     if constraint_type == "Volume Constrained": allocation_warnings.append(f"Warning for {year}: Could only allocate {total_allocated_volume_year:.2f} tonnes out of target {annual_limit:.0f} due to insufficient project availability.")
+                     else: allocation_warnings.append(f"Warning for {year}: Could only spend €{total_allocated_cost_year:.2f} out of target budget €{annual_limit:.2f} due to insufficient affordable project volume.")
         # --- End Year Loop ---
 
         # --- Display Warnings ---
@@ -525,7 +504,7 @@ if df_upload:
         all_types_in_portfolio = set()
         portfolio_data_list = []
         for year, projects in portfolio.items():
-            if projects: # Only process years where allocation happened
+             if projects: # Only process years where allocation happened
                 for name, info in projects.items():
                     all_types_in_portfolio.add(info['type'])
                     portfolio_data_list.append({
@@ -538,50 +517,35 @@ if df_upload:
                     })
 
         if not portfolio_data_list:
-            st.error("No projects could be allocated based on the selected criteria and available data.")
-            st.stop()
+             st.error("No projects could be allocated based on the selected criteria and available data.")
+             st.stop()
 
         portfolio_df = pd.DataFrame(portfolio_data_list)
 
         # Aggregations for plotting and summary
-        summary_dict = {}
+        summary_list = []
         for year in selected_years:
             year_data = portfolio_df[portfolio_df['year'] == year]
             total_volume = year_data['volume'].sum()
             total_cost = year_data['cost'].sum()
-            natural_removal = year_data[year_data['type'] == 'natural removal']['volume'].sum()
-            technical_removal = year_data[year_data['type'] == 'technical removal']['volume'].sum()
-            reduction = year_data[year_data['type'] == 'reduction']['volume'].sum()
-
-            summary_dict[year] = {
-                'Total Volume': total_volume,
-                'Natural Removal': natural_removal,
-                'Technical Removal': technical_removal,
-                'Reductions': reduction,
-                'Total Cost': total_cost
-            }
-
-        summary_df_new = pd.DataFrame.from_dict(summary_dict, orient='index')
-        summary_df_new.index.name = 'Year'
-        summary_df_transposed = summary_df_new.T.reset_index().rename(columns={'index': 'Metric'})
-
-        st.subheader("Portfolio Summary by Year")
-        st.dataframe(summary_df_transposed.style.format({'Total Volume': '{:,.0f}',
-                                                        'Natural Removal': '{:,.0f}',
-                                                        'Technical Removal': '{:,.0f}',
-                                                        'Reductions': '{:,.0f}',
-                                                        'Total Cost': '{:,.2f}'}))
-
+            avg_price = total_cost / (total_volume + 1e-9)
+            volume_by_type = year_data.groupby('type')['volume'].sum()
+            summary_entry = {'Year': year, 'Total Volume (tonnes)': total_volume, 'Total Cost (€)': total_cost, 'Average Price (€/tonne)': avg_price, 'Target Constraint': annual_constraints.get(year, 0)}
+            # Add volumes for all potentially selected types, defaulting to 0 if not in this year's allocation
+            for proj_type in (global_removal_types + ([global_reduction_type] if global_reduction_type else [])):
+                  summary_entry[f'Volume {proj_type.capitalize()}'] = volume_by_type.get(proj_type, 0)
+            summary_list.append(summary_entry)
+        summary_df = pd.DataFrame(summary_list)
 
         st.subheader("Portfolio Composition & Price Over Time")
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 
         # Define UPDATED consistent colors
         color_map = {
-            'technical removal': '#64B5F6', # Blueish
-            'natural removal': '#81C784', # Greenish
-            'reduction': '#B0BEC5', # Greyish
-                # Add more types and colors if needed
+            'technical removal': '#64B5F6', # Blueish (Material Blue Lighten 2)
+            'natural removal': '#81C784', # Greenish (Material Green Lighten 2)
+            'reduction': '#B0BEC5', # Greyish (Material Blue Grey Lighten 1)
+            # Add more types and colors if needed
         }
         default_color = '#D3D3D3' # Light Grey for unknown types
 
@@ -590,39 +554,69 @@ if df_upload:
 
         for type_name in plot_types:
             type_volume_col = f'Volume {type_name.capitalize()}'
-            if type_volume_col in summary_df_new.columns:
-                type_volume = summary_df_new[type_volume_col]
-                fig.add_trace(go.Bar(x=summary_df_new.index, y=type_volume, name=type_name.capitalize(), marker_color=color_map.get(type_name, default_color)), secondary_y=False)
+            if type_volume_col in summary_df.columns:
+                type_volume = summary_df[type_volume_col]
+                fig.add_trace(go.Bar(x=summary_df['Year'], y=type_volume, name=type_name.capitalize(), marker_color=color_map.get(type_name, default_color)), secondary_y=False)
 
-        if 'Total Cost' in summary_df_new.columns and 'Total Volume' in summary_df_new.columns:
-            avg_price = summary_df_new['Total Cost'] / (summary_df_new['Total Volume'] + 1e-9)
-            fig.add_trace(go.Scatter(x=summary_df_new.index, y=avg_price, name='Avg Price (€/tonne)', marker=dict(symbol='circle'), line=dict(color='#546E7A')), secondary_y=True) # Darker Blue Grey for price line
+        fig.add_trace(go.Scatter(x=summary_df['Year'], y=summary_df['Average Price (€/tonne)'], name='Avg Price (€/tonne)', marker=dict(symbol='circle'), line=dict(color='#546E7A')), secondary_y=True) # Darker Blue Grey for price line
 
         fig.update_layout(xaxis_title='Year', yaxis_title='Volume (tonnes)', yaxis2_title='Average Price (€/tonne)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), barmode='stack', template="plotly_white", yaxis=dict(rangemode='tozero'), yaxis2=dict(rangemode='tozero'))
         st.plotly_chart(fig, use_container_width=True)
 
         # Final Year Removal %
-        if end_year in summary_df_new.index:
-            final_year_summary = summary_df_new.loc[end_year]
-            final_tech = final_year_summary.get('Technical Removal', 0)
-            final_nat = final_year_summary.get('Natural Removal', 0)
-            final_total_removal = final_tech + final_nat
-            final_total = final_year_summary.get('Total Volume', 0)
-            achieved_removal_perc = (final_total_removal / (final_total + 1e-9)) * 100
-            if global_has_removals: st.metric(label=f"Achieved Removal % in {end_year}", value=f"{achieved_removal_perc:.2f}%")
-            elif not selected_projects: st.info("No projects selected.")
-            else: st.info("No removal projects selected.")
+        if end_year in summary_df['Year'].values:
+             final_year_summary = summary_df[summary_df['Year'] == end_year].iloc[0]
+             final_tech = final_year_summary.get(f'Volume Technical removal', 0) if 'Volume Technical removal' in final_year_summary else 0
+             final_nat = final_year_summary.get(f'Volume Natural removal', 0) if 'Volume Natural removal' in final_year_summary else 0
+             final_total_removal = final_tech + final_nat
+             final_total = final_year_summary['Total Volume (tonnes)']
+             achieved_removal_perc = (final_total_removal / (final_total + 1e-9)) * 100
+             if global_has_removals: st.metric(label=f"Achieved Removal % in {end_year}", value=f"{achieved_removal_perc:.2f}%")
+             elif not selected_projects: st.info("No projects selected.")
+             else: st.info("No removal projects selected.")
         else:
-            st.info(f"No data allocated for the final year ({end_year}).")
+             st.info(f"No data allocated for the final year ({end_year}).")
 
 
+        st.subheader("Yearly Summary")
+        summary_display_df = summary_df.copy()
+        # Standardize column names before display
+        summary_display_df['Target'] = summary_display_df['Target Constraint']
+        summary_display_df['Achieved Volume'] = summary_display_df['Total Volume (tonnes)']
+        summary_display_df['Achieved Cost (€)'] = summary_display_df['Total Cost (€)']
+        summary_display_df['Avg Price (€/tonne)'] = summary_display_df['Average Price (€/tonne)']
+
+        if constraint_type == "Volume Constrained":
+            summary_display_df.rename(columns={'Target': 'Target Volume'}, inplace=True)
+            display_cols = ['Year', 'Target Volume', 'Achieved Volume', 'Achieved Cost (€)', 'Avg Price (€/tonne)']
+        else:
+             summary_display_df.rename(columns={'Target': 'Target Budget (€)'}, inplace=True)
+             display_cols = ['Year', 'Target Budget (€)', 'Achieved Cost (€)', 'Achieved Volume', 'Avg Price (€/tonne)']
+
+        # Add type columns to display if they exist in the summary
+        for proj_type in plot_types:
+             col_name = f'Volume {proj_type.capitalize()}'
+             if col_name in summary_display_df.columns:
+                  display_cols.append(col_name)
+                  summary_display_df[col_name] = summary_display_df[col_name].map('{:,.0f}'.format) # Format volume
+
+        # Format numeric columns
+        for col in ['Target Budget (€)', 'Achieved Cost (€)', 'Avg Price (€/tonne)']:
+             if col in summary_display_df.columns: summary_display_df[col] = summary_display_df[col].map('{:,.2f}'.format)
+        for col in ['Target Volume', 'Achieved Volume']:
+              if col in summary_display_df.columns: summary_display_df[col] = summary_display_df[col].map('{:,.0f}'.format)
+
+
+        st.dataframe(summary_display_df[display_cols].set_index('Year'))
+
+        # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
         if st.checkbox("Show raw project allocations by year", key="show_raw"):
-            display_portfolio_df = portfolio_df.copy()
-            display_portfolio_df['volume'] = display_portfolio_df['volume'].map('{:,.2f}'.format)
-            display_portfolio_df['price'] = display_portfolio_df['price'].map('{:,.2f}'.format)
-            display_portfolio_df['cost'] = display_portfolio_df['cost'].map('{:,.2f}'.format)
-            st.dataframe(display_portfolio_df[['year', 'project name', 'type', 'volume', 'price', 'cost']].sort_values(by=['year', 'project name']))
+             display_portfolio_df = portfolio_df.copy()
+             display_portfolio_df['volume'] = display_portfolio_df['volume'].map('{:,.2f}'.format)
+             display_portfolio_df['price'] = display_portfolio_df['price'].map('{:,.2f}'.format)
+             display_portfolio_df['cost'] = display_portfolio_df['cost'].map('{:,.2f}'.format)
+             st.dataframe(display_portfolio_df[['year', 'project name', 'type', 'volume', 'price', 'cost']].sort_values(by=['year', 'project name']))
 
     elif df_upload:
-        st.warning("Please select at least one project in Step 2")
+         st.warning("Please select at least one project in Step 2 to build the portfolio.")
