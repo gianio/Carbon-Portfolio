@@ -612,7 +612,7 @@ if df_upload:
                                              titlefont_size=16,
                                              marker=dict(line=dict(color='#000000', width=0.3)),
                                              textfont_size=12,
-                                             rotation=fig_pie.data[0].theta[0] if fig_pie.data else 0 # Handle empty fig_pie
+                                             # Removed the problematic rotation parameter
                                             ))
                 elif total_type_volume > 0:
                     st.warning(f"Warning: Length mismatch or no projects for type '{project_type}'. Skipping inner pie.")
