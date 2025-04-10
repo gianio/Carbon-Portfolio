@@ -267,7 +267,7 @@ if df_upload:
         portfolio = {year: {} for year in selected_years} # Stores { project_name: { volume: v, price: p, type: t } }
         allocation_warnings = []
         
-        # --- Start Year Loop ---
+# --- Start Year Loop ---
 for year_idx, year in enumerate(selected_years):
     year_str = str(year)
     volume_col = f"available volume {year_str}"
@@ -491,8 +491,8 @@ for year_idx, year in enumerate(selected_years):
                     # print(f"    Allocated {vol_to_allocate:.2f} to NonPrio '{project_name}' (Price: {price:.2f})") # Optional detailed log
 
 
-    # --- Final Step for Year ---
-
+        # --- Final Step for Year ---
+    
         # --- Display Warnings ---
         if allocation_warnings:
             st.warning("Allocation Notes & Warnings:")
