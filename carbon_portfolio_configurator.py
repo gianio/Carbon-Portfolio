@@ -341,15 +341,18 @@ if df_upload:
 
             # 1.a Allocate Removals (respecting preference)
             if current_has_removals and not removals_df.empty:
-                removal_pref_factor = removal_preference / 10.0
+                # Smoothed sigmoid-like mapping (0.0 to 1.0 over input 1-10)
+                removal_pref_factor = 1 / (1 + np.exp(-1.2 * (removal_preference - 5.5)))
                 # Calculate the *ideal* target split based on preference (volume or cost depends on constraint)
                 # This target guides Phase 1 allocation in mixed portfolios
                 natural_pref_target = target_removal_alloc * (1.0 - removal_pref_factor)
                 technical_pref_target = target_removal_alloc * removal_pref_factor
-
-                removal_order_types = ['natural removal', 'technical removal']
-                if removal_preference > 5:
-                    removal_order_types.reverse()
+                
+                # Nur invertieren, wenn Differenz zu 0.5 signifikant
+                if removal_pref_factor > 0.55:
+                    removal_order_types = ['technical removal', 'natural removal']
+                else:
+                    removal_order_types = ['natural removal', 'technical removal']
 
                 for r_type in removal_order_types:
                     if r_type not in removals_df['project type'].unique(): continue
