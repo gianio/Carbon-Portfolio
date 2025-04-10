@@ -612,6 +612,43 @@ if df_upload:
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
 
+        # --- Convert Portfolio Dictionary to DataFrame ---
+        records = []
+        for year, projects in portfolio.items():
+            for name, info in projects.items():
+                if info['volume'] > 0:
+                    records.append({
+                        'year': str(year),
+                        'type': info['type'],
+                        'project': name,
+                        'volume': info['volume']
+                    })
+        
+        df = pd.DataFrame(records)
+        
+        if df.empty:
+            st.warning("No allocations to display.")
+        else:
+            # --- Sunburst Plot ---
+            fig = px.sunburst(
+                df,
+                path=['year', 'type', 'project'],  # Hierarchical structure
+                values='volume',
+                color='type',
+                color_discrete_map={
+                    'technical removal': 'royalblue',
+                    'natural removal': 'forestgreen',
+                    'reduction': 'orange'
+                },
+                title="Carbon Credit Allocation Across Years"
+            )
+        
+            fig.update_traces(textinfo='label+value+percent entry')
+        
+            # --- Display in Streamlit ---
+            st.subheader("📊 Allocation Overview (All Years Combined)")
+            st.plotly_chart(fig, use_container_width=True)
+
     
         # Raw Allocation Data
         st.subheader("Detailed Allocation Data")
