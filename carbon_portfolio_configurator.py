@@ -443,44 +443,55 @@ if df_upload:
                             year_df.loc[idx, 'volume'] -= vol_to_allocate
                             allocated_reduction_value += (cost if constraint_type == "Budget Constrained" else vol_to_allocate)
 
-            # --- PHASE 2: Gap Filling ---
-            limit_met = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                        (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
-            if not limit_met and annual_limit > 0:
-                remaining_projects_df = year_df[year_df['volume'] > 1e-6].sort_values(by=['priority', 'price'], ascending=[False, True])
-                if not remaining_projects_df.empty:
-                    for idx, project in remaining_projects_df.iterrows():
-                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6): break
-
-                        project_name = project['project name']
-                        available_vol = project['volume']
-                        price = project['price']
+        # --- PHASE 2: Gap Filling ---
+        limit_met = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                    (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
+        
+        if not limit_met and annual_limit > 0:
+            remaining_projects_df = year_df[year_df['volume'] > 1e-6].sort_values(by=['priority', 'price'], ascending=[False, True])
+            if not remaining_projects_df.empty:
+                for idx, project in remaining_projects_df.iterrows():
+                    if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                       (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6):
+                        break
+        
+                    project_name = project['project name']
+                    available_vol = project['volume']
+                    price = project['price']
+                    vol_to_allocate = 0.0
+                    cost_of_unit = price if price > 0 else 0
+        
+                    if constraint_type == "Volume Constrained":
+                        remaining_overall_limit = max(0, annual_limit - total_allocated_volume_year)
+                        vol_to_allocate = min(available_vol, remaining_overall_limit)
+                    else:   # Budget Constrained
+                        remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
+                        affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9)
+                        vol_to_allocate = min(available_vol, affordable_vol_overall)
+        
+                    if vol_to_allocate < 1e-6:
                         vol_to_allocate = 0.0
-                        cost_of_unit = price if price > 0 else 0
-
-                        if constraint_type == "Volume Constrained":
-                            remaining_overall_limit = max(0, annual_limit - total_allocated_volume_year)
-                            vol_to_allocate = min(available_vol, remaining_overall_limit)
-                        else:   # Budget Constrained
-                            remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
-                            affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9)
-                            vol_to_allocate = min(available_vol, affordable_vol_overall)
-
-                        if vol_to_allocate < 1e-6:
-                            vol_to_allocate = 0.0
-
-                        if vol_to_allocate > 0:
-                            cost = vol_to_allocate * price
-                            total_allocated_volume_year += vol_to_allocate
-                            total_allocated_cost_year += cost
-                            if project_name not in allocated_projects_this_year:
-                                allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
-                            allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
-                            year_df.loc[idx, 'volume'] -= vol_to_allocate
-
-            # Store final allocation for the year
-            portfolio[year] = allocated_projects_this_year
+        
+                    if vol_to_allocate > 0:
+                        cost = vol_to_allocate * price
+                        total_allocated_volume_year += vol_to_allocate
+                        total_allocated_cost_year += cost
+                        if project_name not in allocated_projects_this_year:
+                            allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
+                        allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
+                        year_df.loc[idx, 'volume'] -= vol_to_allocate
+        
+        # --- Ensure All Selected Projects are Included ---
+        for project_name in selected_projects:
+            if project_name not in allocated_projects_this_year:
+                allocated_projects_this_year[project_name] = {
+                    'volume': 0.0,  # Minimal allocation since constraints are exceeded
+                    'price': selected_df.loc[selected_df['project name'] == project_name, 'price'].iloc[0] if 'price' in selected_df.columns else 0.0,
+                    'type': selected_df.loc[selected_df['project name'] == project_name, 'project type'].iloc[0]
+                }
+        
+        # Store final allocation for the year
+        portfolio[year] = allocated_projects_this_year
 
 
         # --- Display Warnings ---
