@@ -443,44 +443,249 @@ if df_upload:
                             year_df.loc[idx, 'volume'] -= vol_to_allocate
                             allocated_reduction_value += (cost if constraint_type == "Budget Constrained" else vol_to_allocate)
 
-            # --- PHASE 2: Gap Filling ---
-            limit_met = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                        (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
-            if not limit_met and annual_limit > 0:
-                remaining_projects_df = year_df[year_df['volume'] > 1e-6].sort_values(by=['priority', 'price'], ascending=[False, True])
-                if not remaining_projects_df.empty:
-                    for idx, project in remaining_projects_df.iterrows():
-                        if (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
-                           (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6): break
+ # --- PHASE 2: Gap Filling ---
+        # Check if limit was already met in Phase 1
+        limit_met_before_phase2 = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                                   (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
 
-                        project_name = project['project name']
-                        available_vol = project['volume']
-                        price = project['price']
+        if not limit_met_before_phase2 and annual_limit > 0:
+            # Get projects with volume remaining after Phase 1
+            # Ensure the 'volume' column in year_df reflects remaining volume accurately before this point.
+            # Create a working copy sorted globally (Priority DESC, Price ASC)
+            remaining_projects_df = year_df[year_df['volume'] > 1e-6].copy()
+            remaining_projects_df.sort_values(by=['priority', 'price'], ascending=[False, True], inplace=True)
+
+            if not remaining_projects_df.empty:
+                projects_processed_in_phase2 = set()
+                # Store Phase 2 allocations temporarily to add them later
+                temp_allocations_phase2 = {} # { proj_name: allocated_vol_phase2 }
+
+                # --- Pass 2.A: Allocate to PRIORITIZED projects sequentially ---
+                print(f"    Phase 2A: Processing prioritized projects for gap filling (Year {year})...")
+                # Use itertuples for potentially better performance
+                for project_tuple in remaining_projects_df.itertuples(index=True): # Get index too
+                    idx = project_tuple.Index # Get the actual index label
+                    
+                    # Check global limit status before processing each project
+                    limit_met_phase2a = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                                       (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
+                    if limit_met_phase2a:
+                        print("      Phase 2A: Annual limit reached.")
+                        break # Stop processing prioritized projects
+
+                    # Check if project is prioritized (handle potential NaN/non-numeric)
+                    priority_val = getattr(project_tuple, 'priority', None)
+                    is_prioritized = pd.notna(priority_val) and isinstance(priority_val, (int, float)) and priority_val > 0
+
+                    if is_prioritized:
+                        project_name = getattr(project_tuple, 'project name', 'N/A')
+                        # Use the volume directly from the tuple (which comes from the copied df)
+                        available_vol = getattr(project_tuple, 'volume', 0.0) 
+                        price = getattr(project_tuple, 'price', 0.0)
+                        cost_of_unit = price if pd.notna(price) and price > 0 else 0
                         vol_to_allocate = 0.0
-                        cost_of_unit = price if price > 0 else 0
 
+                        if available_vol < 1e-6: continue # Skip if no volume left
+
+                        # Calculate allocation based on constraint
                         if constraint_type == "Volume Constrained":
-                            remaining_overall_limit = max(0, annual_limit - total_allocated_volume_year)
-                            vol_to_allocate = min(available_vol, remaining_overall_limit)
-                        else:   # Budget Constrained
+                            remaining_overall_limit_vol = max(0, annual_limit - total_allocated_volume_year)
+                            vol_to_allocate = min(available_vol, remaining_overall_limit_vol)
+                        else: # Budget Constrained
                             remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
-                            affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9)
+                            # Prevent division by zero if cost_of_unit is 0
+                            affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9) if cost_of_unit > 1e-9 else float('inf')
                             vol_to_allocate = min(available_vol, affordable_vol_overall)
 
-                        if vol_to_allocate < 1e-6:
-                            vol_to_allocate = 0.0
+                        # Ensure positive allocation and avoid tiny amounts if limits are tight
+                        if vol_to_allocate < 1e-6: vol_to_allocate = 0.0
 
                         if vol_to_allocate > 0:
                             cost = vol_to_allocate * price
+                            # Update totals
                             total_allocated_volume_year += vol_to_allocate
                             total_allocated_cost_year += cost
-                            if project_name not in allocated_projects_this_year:
-                                allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': project['project type']}
-                            allocated_projects_this_year[project_name]['volume'] += vol_to_allocate
-                            year_df.loc[idx, 'volume'] -= vol_to_allocate
+                            # Record allocation for Phase 2
+                            if project_name not in temp_allocations_phase2:
+                                 temp_allocations_phase2[project_name] = 0.0
+                            temp_allocations_phase2[project_name] += vol_to_allocate
+                            # Mark as processed in this phase
+                            projects_processed_in_phase2.add(project_name)
+                            # Decrement remaining volume IN THE WORKING COPY for Pass 2B accuracy
+                            remaining_projects_df.loc[idx, 'volume'] -= vol_to_allocate
+                    # else: project is non-prioritized, handled in Pass 2B
 
-            # Store final allocation for the year
-            portfolio[year] = allocated_projects_this_year
+                # --- Pass 2.B: Allocate to NON-PRIORITIZED projects ---
+                print(f"    Phase 2B: Processing non-prioritized projects for gap filling (Year {year})...")
+                
+                # Filter for non-prioritized projects with remaining volume AFTER Pass 2A
+                non_prio_to_fill_df = remaining_projects_df[
+                    ~remaining_projects_df['project name'].isin(projects_processed_in_phase2) &
+                    (remaining_projects_df['volume'] > 1e-6)
+                ].copy() # Create a new copy to work with for non-prio
+
+                if not non_prio_to_fill_df.empty:
+                    # Check global limit status again before starting Pass 2B
+                    limit_met_before_pass2b = (constraint_type == "Volume Constrained" and total_allocated_volume_year >= annual_limit - 1e-6) or \
+                                              (constraint_type == "Budget Constrained" and total_allocated_cost_year >= annual_limit - 1e-6)
+
+                    if not limit_met_before_pass2b:
+
+                        # --- BRANCHING LOGIC FOR NON-PRIORITIZED ---
+
+                        # --- Equal Share Logic (Volume Constrained) ---
+                        if constraint_type == "Volume Constrained":
+                            print("      Applying equal volume share logic (Volume Constrained).")
+                            # Get unique types remaining among non-prioritized
+                            types_to_fill = non_prio_to_fill_df['project type'].unique()
+
+                            # Process type by type for equal sharing
+                            for current_type in types_to_fill:
+                                # Check overall limit before processing the type
+                                current_limit_vol_start_type = max(0, annual_limit - total_allocated_volume_year)
+                                if current_limit_vol_start_type < 1e-6:
+                                    print("      Global volume limit met, skipping further types.")
+                                    break # Global limit met
+
+                                # Get non-prio projects of this type with remaining volume
+                                type_non_prio_mask = (non_prio_to_fill_df['project type'] == current_type) & \
+                                                     (non_prio_to_fill_df['volume'] > 1e-6)
+                                type_indices = non_prio_to_fill_df.index[type_non_prio_mask]
+                                
+                                if len(type_indices) == 0: continue # No active projects of this type
+
+                                print(f"        Processing type: {current_type} ({len(type_indices)} projects)")
+                                # Use iterative approach for fair sharing with individual caps
+                                while True:
+                                    current_limit_vol = max(0, annual_limit - total_allocated_volume_year)
+                                    if current_limit_vol < 1e-6: break # Check limit at start of each iteration
+
+                                    # Find projects of this type still active (volume > 1e-6)
+                                    active_mask_iter = non_prio_to_fill_df.loc[type_indices, 'volume'] > 1e-6
+                                    active_indices_iter = type_indices[active_mask_iter]
+                                    num_active = len(active_indices_iter)
+
+                                    if num_active == 0: break # Type exhausted or projects too small
+
+                                    # Calculate ideal share based on current remaining limit and active projects
+                                    ideal_share_vol = current_limit_vol / num_active
+
+                                    # Find bottleneck: project that will finish first if ideal share is given
+                                    # Needed to allocate efficiently in chunks
+                                    min_remaining_vol_active = non_prio_to_fill_df.loc[active_indices_iter, 'volume'].min()
+                                    
+                                    # Volume to allocate per project in this iteration step
+                                    vol_per_project_this_iter = min(ideal_share_vol, min_remaining_vol_active)
+
+                                    # Avoid excessively small allocations if limit is almost met
+                                    if vol_per_project_this_iter < 1e-9: break
+
+                                    # Ensure we don't allocate more than the remaining limit overall in this step
+                                    max_alloc_this_iter = vol_per_project_this_iter * num_active
+                                    if max_alloc_this_iter > current_limit_vol + 1e-9: # Add tolerance
+                                        # Scale back allocation if calculated total exceeds remaining limit
+                                        vol_per_project_this_iter = current_limit_vol / num_active
+                                        if vol_per_project_this_iter < 1e-9: break
+
+                                    # Allocate this volume to all active projects of the type
+                                    allocated_in_iter = 0
+                                    for idx in active_indices_iter:
+                                        # Get needed info (safer access)
+                                        project_name = non_prio_to_fill_df.loc[idx, 'project name']
+                                        price = non_prio_to_fill_df.loc[idx, 'price']
+                                        
+                                        # Apply allocation
+                                        actual_alloc_proj = min(vol_per_project_this_iter, non_prio_to_fill_df.loc[idx, 'volume'])
+                                        
+                                        if actual_alloc_proj < 1e-9: continue # Skip tiny allocation
+
+                                        non_prio_to_fill_df.loc[idx, 'volume'] -= actual_alloc_proj
+                                        
+                                        if project_name not in temp_allocations_phase2:
+                                            temp_allocations_phase2[project_name] = 0.0
+                                        temp_allocations_phase2[project_name] += actual_alloc_proj
+
+                                        # Update global totals
+                                        total_allocated_volume_year += actual_alloc_proj
+                                        # Track cost even if volume constrained
+                                        total_allocated_cost_year += actual_alloc_proj * (price if pd.notna(price) else 0) 
+                                        allocated_in_iter += actual_alloc_proj
+
+                                    # Break inner loop if no volume was actually allocated (e.g., due to precision)
+                                    if allocated_in_iter < 1e-9:
+                                        break
+
+
+                        # --- Sequential Price Logic (Budget Constrained) ---
+                        else: # Budget Constrained
+                            print("      Applying sequential price-based logic (Budget Constrained).")
+                            # Sort remaining non-prioritized projects by price only (ascending)
+                            non_prio_to_fill_df.sort_values(by=['price'], ascending=[True], inplace=True)
+
+                            for idx, project in non_prio_to_fill_df.iterrows():
+                                # Check budget limit before processing project
+                                if total_allocated_cost_year >= annual_limit - 1e-6:
+                                    print("        Budget limit reached.")
+                                    break # Stop processing non-prio projects
+
+                                project_name = project['project name']
+                                # Use volume remaining after Pass 2A
+                                available_vol = project['volume'] 
+                                price = project['price']
+                                cost_of_unit = price if pd.notna(price) and price > 0 else 0
+                                vol_to_allocate = 0.0
+
+                                if available_vol < 1e-6: continue
+
+                                remaining_overall_budget = max(0, annual_limit - total_allocated_cost_year)
+                                # Prevent division by zero
+                                affordable_vol_overall = remaining_overall_budget / (cost_of_unit + 1e-9) if cost_of_unit > 1e-9 else float('inf')
+                                vol_to_allocate = min(available_vol, affordable_vol_overall)
+
+                                if vol_to_allocate < 1e-6: vol_to_allocate = 0.0
+
+                                if vol_to_allocate > 0:
+                                    cost = vol_to_allocate * price
+                                    # Update totals
+                                    total_allocated_volume_year += vol_to_allocate
+                                    total_allocated_cost_year += cost
+                                    # Record allocation for Phase 2
+                                    if project_name not in temp_allocations_phase2:
+                                         temp_allocations_phase2[project_name] = 0.0
+                                    temp_allocations_phase2[project_name] += vol_to_allocate
+                                    # No need to decrement volume in df here as we iterate only once sequentially
+
+                # --- Consolidate Phase 2 Allocations into final result ---
+                print(f"    Consolidating Phase 2 allocations for Year {year}...")
+                for project_name, allocated_vol_phase2 in temp_allocations_phase2.items():
+                     if allocated_vol_phase2 > 1e-6:
+                         # Find original project details (price, type) using original year_df
+                         # Ensure year_df wasn't modified in ways that lose original info
+                         try:
+                             # Find the row in the original yearly dataframe
+                             original_project_row = year_df[year_df['project name'] == project_name].iloc[0]
+                             price = original_project_row['price']
+                             ptype = original_project_row['project type'] # Get type from original data
+
+                             # Add or update the main allocation dictionary
+                             if project_name not in allocated_projects_this_year:
+                                  # If project wasn't allocated in Phase 1, create entry
+                                  allocated_projects_this_year[project_name] = {'volume': 0.0, 'price': price, 'type': ptype}
+                             
+                             # Add Phase 2 volume to any existing Phase 1 volume
+                             allocated_projects_this_year[project_name]['volume'] += allocated_vol_phase2
+                             # Optional: Round final volume here if needed
+                             # allocated_projects_this_year[project_name]['volume'] = round(allocated_projects_this_year[project_name]['volume'], 6) 
+
+                         except IndexError:
+                              allocation_warnings.append(f"Warning for {year}: Could not find original details for project '{project_name}' during Phase 2 consolidation.")
+
+
+        # --- Store final allocation for the year ---
+        # The dictionary allocated_projects_this_year now contains combined Phase 1 and Phase 2 allocations.
+        portfolio[year] = allocated_projects_this_year
+        print(f"  Finished allocation for {year}. Allocated Vol: {total_allocated_volume_year:.2f}, Cost: {total_allocated_cost_year:.2f}")
+        # --- End Year Loop --- (This closing bracket was outside the original snippet)
 
 
         # --- Display Warnings ---
