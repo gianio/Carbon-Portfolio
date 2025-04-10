@@ -613,7 +613,7 @@ if df_upload:
         st.dataframe(summary_display_df[display_cols].set_index('Year'))
 
 
-        # --- Convert Portfolio Dictionary to DataFrame ---
+        # --- Convert Portfolio Dictionary to DataFrame (Summing volumes across all years) ---
         records = []
         for year, projects in portfolio.items():
             for name, info in projects.items():
@@ -627,28 +627,28 @@ if df_upload:
         
         df = pd.DataFrame(records)
         
-        if df.empty:
-            st.warning("No allocations to display.")
-        else:
-            # --- Sunburst Plot ---
-            fig = px.sunburst(
-                df,
-                path=['year', 'type', 'project'],  # Hierarchical structure
-                values='volume',
-                color='type',
-                color_discrete_map={
-                    'technical removal': 'royalblue',
-                    'natural removal': 'forestgreen',
-                    'reduction': 'orange'
-                },
-                title="Carbon Credit Allocation Across Years"
-            )
+        # --- Aggregate the Data (sum volumes across all years for each project) ---
+        df_summed = df.groupby(['type', 'project']).agg({'volume': 'sum'}).reset_index()
         
-            fig.update_traces(textinfo='label+value+percent entry')
+        # --- Sunburst Plot for Total Allocation Across All Years ---
+        fig = px.sunburst(
+            df_summed,
+            path=['type', 'project'],  # Hierarchical structure: Type -> Project
+            values='volume',           # Size based on the total volume across all years
+            color='type',              # Color by type (Technical, Natural, Reduction)
+            color_discrete_map={
+                'technical removal': 'royalblue',
+                'natural removal': 'forestgreen',
+                'reduction': 'orange'
+            },
+            title="Total Carbon Credit Allocation Across All Years"
+        )
         
-            # --- Display in Streamlit ---
-            st.subheader("📊 Allocation Overview (All Years Combined)")
-            st.plotly_chart(fig, use_container_width=True)
+        fig.update_traces(textinfo='label+value+percent entry')
+        
+        # --- Display the Chart in Streamlit ---
+        st.subheader("📊 Total Allocation Overview (Across All Years Combined)")
+        st.plotly_chart(fig, use_container_width=True)
 
     
         # Raw Allocation Data
