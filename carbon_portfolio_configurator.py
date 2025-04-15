@@ -49,12 +49,17 @@ css = """
         background-color: #FFFFFF; /* White background for inputs */
         color: #1B5E20; /* Dark green text inside input */
     }
-    /* Slider specific styling (Neutral Track) */
-    [data-testid="stSidebar"] .stSlider [data-testid="stTickBar"] { background: #C8E6C9; } /* Track matches sidebar bg */
-    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] > div:nth-child(1) {
-         background-color: #DDDDDD; /* Neutral grey for selected range track */
+    /* Slider specific styling (Neutral Colors) */
+    [data-testid="stSidebar"] .stSlider [data-testid="stTickBar"] {
+        background: #EEEEEE; /* Light Grey base track */
     }
-    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] > div:nth-child(3) { background-color: #388E3C; } /* Slider handle */
+    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] > div:nth-child(1) {
+         background-color: #DDDDDD !important; /* Neutral grey for selected range track */
+    }
+    [data-testid="stSidebar"] .stSlider [data-baseweb="slider"] > div:nth-child(3) {
+        background-color: #888888 !important; /* Neutral grey handle */
+        border-color: #777777 !important;
+     }
 
     [data-testid="stSidebar"] .stMultiSelect [data-baseweb="tag"] { background-color: #66BB6A; color: white; }
     [data-testid="stSidebar"] .stRadio [data-baseweb="radio"] span:first-child { background-color: #A5D6A7 !important; border: 2px solid #388E3C !important; } /* Light green circle */
@@ -73,27 +78,27 @@ css = """
     /* Dataframes */
     .stDataFrame { border: 1px solid #A5D6A7; }
 
-    /* --- Key Metrics Styling --- */
+    /* --- Key Metrics Styling (Individual Boxes) --- */
     .key-metrics-line {
-        border-bottom: 1px solid #A5D6A7; /* Optional separator line */
-        padding-bottom: 15px;
+        /* Container just provides margin below */
         margin-bottom: 25px;
-        align-items: center; /* Align items vertically if using columns */
     }
-    /* Style EACH metric box */
+    /* Style EACH metric box within the container/columns */
     .key-metrics-line .stMetric {
         background-color: #C8E6C9 !important; /* Light Green background */
         border: 2px solid #1B5E20 !important; /* Dark Green border */
-        border-radius: 8px !important;
-        padding: 10px 15px !important;
+        border-radius: 8px !important;         /* Rounded edges */
+        padding: 10px 15px !important;         /* Padding inside */
         text-align: center;
         color: #1B5E20 !important; /* Dark Green text */
     }
+     /* Metric Label Style */
      .key-metrics-line .stMetric > label {
         color: #1B5E20 !important; /* Dark Green text */
         font-weight: bold;
         margin-bottom: 5px !important;
      }
+     /* Metric Value Style */
      .key-metrics-line .stMetric > div > div {
          color: #1B5E20 !important; /* Dark Green text */
          font-size: 1.4em; /* Adjust size */
@@ -108,12 +113,15 @@ css = """
     /* Delta styling (optional) */
      .key-metrics-line .stMetric > div > div:nth-child(2) {
         font-size: 0.85rem;
-        color: #388E3C !important;
+        color: #388E3C !important; /* Medium green for delta */
      }
      /* Style for the pie chart column */
      .key-metrics-line [data-testid="stVerticalBlock"]:last-child {
          text-align: center;
+         /* Add padding top to align pie chart better if needed */
+         padding-top: 5px;
      }
+
 </style>
 """
 st.markdown(css, unsafe_allow_html=True)
@@ -394,7 +402,7 @@ with st.sidebar:
 
     # Sections 2 & 3
     if st.session_state.get('data_loaded_successfully', False):
-        data_df = st.session_state.working_data_full
+        data_df = st.session_state.working_data_full # Get data frame from state
         available_years_in_data = st.session_state.available_years_in_data; project_names_list = st.session_state.project_names
         st.markdown("## 2. Portfolio Settings")
         if not available_years_in_data:
@@ -407,7 +415,7 @@ with st.sidebar:
             min_year_data = min(available_years_in_data)
             max_year_data = max(available_years_in_data)
 
-            # --- ** FIX: Year Selection using Number Inputs ** ---
+            # --- Year Selection using Number Inputs ---
             st.sidebar.markdown("### Planning Horizon")
             start_default = st.session_state.start_year_input if st.session_state.start_year_input is not None else min_year_data
             end_default = st.session_state.end_year_input if st.session_state.end_year_input is not None else min(start_default + 4, max_year_data)
@@ -439,12 +447,11 @@ with st.sidebar:
             if list_changed:
                  st.session_state.selected_years = temp_selected_years
                  if input_years_valid:
-                      st.session_state.annual_targets = {yr: val for yr, val in st.session_state.annual_targets.items() if yr in temp_selected_years}
+                      st.session_state.annual_targets = { yr: val for yr, val in st.session_state.annual_targets.items() if yr in temp_selected_years }
 
-            # --- ** FIX: Rerun if inputs changed and valid, or if valid list changed ** ---
+            # Rerun if inputs changed and the range is valid, or if the valid list changed
             if input_years_valid and (start_changed or end_changed or list_changed):
-                 st.rerun() # Force refresh to ensure UI consistency
-
+                 st.rerun() # Force refresh ensures consistency
 
             # Display Planning Horizon & Constraint Type
             if not st.session_state.selected_years or not input_years_valid:
@@ -507,7 +514,7 @@ st.title("Carbon Portfolio Builder")
 if not st.session_state.get('data_loaded_successfully', False): st.info("👋 Welcome! Please upload project data via the sidebar to begin.")
 elif not st.session_state.get('selected_projects'): st.warning("⚠️ Please select projects in the sidebar to build the portfolio.")
 elif not st.session_state.get('selected_years'): st.warning("⚠️ Please select a valid Start and End Year in the sidebar.")
-elif st.session_state.actual_start_year is None or st.session_state.actual_end_year is None : st.warning("⚠️ Invalid year range selected.") # Added check
+elif st.session_state.actual_start_year is None or st.session_state.actual_end_year is None : st.warning("⚠️ Invalid year range selected.")
 else:
     # --- Check required state --- (unchanged)
     required_state_keys = ['working_data_full', 'selected_projects', 'selected_years', 'annual_targets', 'constraint_type', 'removal_target_end_year', 'transition_speed', 'category_split', 'favorite_projects_selection', 'actual_start_year', 'actual_end_year']
@@ -518,10 +525,10 @@ else:
             favorite_project_name = st.session_state.favorite_projects_selection[0] if st.session_state.favorite_projects_selection else None; current_constraint_type = st.session_state.constraint_type; summary_col_suffix = "Volume" if current_constraint_type == "Volume" else "Budget"; shortfall_col_name = f'{summary_col_suffix} Shortfall'; start_yr_alloc = st.session_state.actual_start_year; end_yr_alloc = st.session_state.actual_end_year
 
             # --- Run Allocation ---
-            # Add redundant check just before call
-            if start_yr_alloc is None or end_yr_alloc is None: st.error("Cannot run allocation: Invalid planning horizon state.")
+            if start_yr_alloc is None or end_yr_alloc is None: st.error("Cannot run allocation: Planning horizon start/end years are not set.")
             else:
                 with st.spinner("Calculating portfolio allocation..."):
+                    # Pass necessary arguments to cached function
                     portfolio_results, summary_df = allocate_portfolio(
                         project_data=st.session_state.working_data_full,
                         selected_project_names=st.session_state.selected_projects,
@@ -529,14 +536,16 @@ else:
                         start_year_portfolio=start_yr_alloc,
                         end_year_portfolio=end_yr_alloc,
                         constraint_type=current_constraint_type,
+                        # Pass hashable version of dicts if caching issues arise
                         annual_targets=st.session_state.annual_targets,
                         removal_target_percent_end_year=st.session_state.removal_target_end_year,
                         transition_speed=st.session_state.transition_speed,
                         category_split=st.session_state.category_split,
-                        favorite_project=favorite_project_name
+                        favorite_project=favorite_project_name,
+                        priority_boost_percent=10 # Keep default or make configurable
                     )
 
-                # Prepare Viz Data (unchanged)
+                # --- Prepare Viz Data --- (unchanged)
                 portfolio_data_list_viz = []
                 if portfolio_results:
                     for year_viz, projects_list in portfolio_results.items():
@@ -549,7 +558,7 @@ else:
                 st.markdown("#### Portfolio Overview")
                 container_css_class = "key-metrics-line"
                 with st.container():
-                    st.markdown(f'<div class="{container_css_class}">', unsafe_allow_html=True)
+                    st.markdown(f'<div class="{container_css_class}">', unsafe_allow_html=True) # Div for CSS scoping
                     if not summary_df.empty and start_yr_alloc is not None and end_yr_alloc is not None:
                         total_volume = summary_df['Allocated Volume'].sum(); total_cost = summary_df['Allocated Cost'].sum(); overall_avg_price = (total_cost / total_volume) if total_volume > 0 else 0; total_shortfall = summary_df[shortfall_col_name].sum()
                         pie_data = pd.DataFrame()
@@ -574,33 +583,32 @@ else:
                             # Display Pie Chart
                             if not pie_data.empty:
                                 type_color_map_viz = {'technical removal': '#66BB6A', 'natural removal': '#AED581', 'reduction': '#388E3C'}
-                                # Capitalize type names for display
-                                pie_data['type_display'] = pie_data['type'].apply(lambda x: x.replace('_', ' ').capitalize()) # More robust capitalization
+                                pie_data['type_display'] = pie_data['type'].apply(lambda x: x.replace('_', ' ').capitalize())
                                 fig_pie = px.pie(pie_data,
-                                                 values='volume', names='type_display', title="Volume Mix",
+                                                 values='volume', names='type_display', title="Volume Mix", # Added Title
                                                  color='type', color_discrete_map=type_color_map_viz, hole=0.3 )
                                 fig_pie.update_traces(textposition='outside', textinfo='percent', textfont_size=11,
                                                       hovertemplate = "<b>%{label}</b><br>Volume: %{value:,.0f} t<br>%{percent:.1%}<extra></extra>",
                                                       insidetextorientation='radial')
                                 fig_pie.update_layout(
-                                    showlegend=True, # ** Show legend **
+                                    showlegend=True, # ** Show Legend **
                                     legend_title_text='Type',
                                     legend=dict(orientation="v", yanchor="top", y=0.9, xanchor="left", x=0.05, font=dict(size=10)),
-                                    margin=dict(l=0, r=0, t=35, b=20), # ** Adjusted margins **
-                                    height=200, # ** Adjusted height **
-                                    title_font_size=14, title_y=0.96, title_x=0.5, title_xanchor='center',
+                                    margin=dict(l=0, r=0, t=40, b=20), # ** Increased top/bottom margin **
+                                    height=250, # ** Increased Height **
+                                    title_font_size=14, title_y=0.97, title_x=0.5, title_xanchor='center', # Adjust title position slightly
                                     uniformtext_minsize=9, uniformtext_mode='hide' )
                                 st.plotly_chart(fig_pie, use_container_width=True)
-                            else: st.caption(" ") # Empty caption to maintain height roughly
+                            else: st.caption(" ") # Keep alignment
 
                     else:
                         st.markdown("<p style='text-align: center; font-style: italic;'>Run allocation to see overview.</p>", unsafe_allow_html=True)
-                    st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown('</div>', unsafe_allow_html=True) # Close the div
 
 
                 # --- Plots and Tables Section ---
                 st.header("📊 Portfolio Analysis & Visualization"); st.markdown("---")
-                if portfolio_df_viz.empty: st.warning("No projects received allocation based on current settings. Cannot generate plots.")
+                if portfolio_df_viz.empty: st.warning("No projects received allocation...")
                 else:
                     type_color_map = {'technical removal': '#66BB6A', 'natural removal': '#AED581', 'reduction': '#388E3C'}; default_color = '#BDBDBD'
                     # Composition Plot (unchanged)
@@ -625,12 +633,11 @@ else:
                     if st.session_state.selected_years: fig_composition.update_xaxes(tickmode='array', tickvals=st.session_state.selected_years, dtick=1)
                     st.plotly_chart(fig_composition, use_container_width=True)
 
-                    # --- Detailed Allocation View (Treemap Moved) ---
+                    # --- ** FIX: Detailed Allocation View (No Treemap) ** ---
                     st.markdown("---")
                     st.markdown("#### 📄 Detailed Allocation View")
-                    st.markdown("##### Allocation Breakdown by Volume (Treemap)") # Header for treemap
-                    treemap_placeholder = st.empty() # Placeholder defined before radio
 
+                    # Radio button and Detailed Table display
                     if portfolio_results and any(v for v in portfolio_results.values() if isinstance(v, list) and v):
                         years_with_allocations = sorted([yr for yr, details in portfolio_results.items() if isinstance(details, list) and details and any(d.get('allocated_volume',0) > 0 for d in details)])
                         df_all_years_agg = pd.DataFrame(); all_years_data_exists = False
@@ -640,23 +647,10 @@ else:
                         if years_with_allocations: radio_options.extend([str(year) for year in years_with_allocations])
 
                         if radio_options:
-                            selected_view_detail = st.radio("Select View for Detailed Table & Treemap:", radio_options, horizontal=True, key='detail_view_radio')
+                            # ** FIX: Updated Radio Label **
+                            selected_view_detail = st.radio("Select View for Detailed Table:", radio_options, horizontal=True, key='detail_view_radio')
 
-                            # --- Generate and Display Treemap ---
-                            if not portfolio_df_viz.empty:
-                                df_treemap = pd.DataFrame()
-                                if selected_view_detail == "All Years (Aggregated)":
-                                    if all_years_data_exists: df_treemap = df_all_years_agg.rename(columns={'allocated_volume': 'volume'})[['type', 'project name', 'volume']]
-                                else:
-                                    try: year_to_show_treemap = int(selected_view_detail); df_treemap = portfolio_df_viz[portfolio_df_viz['year'] == year_to_show_treemap][['type', 'project name', 'volume']]
-                                    except ValueError: df_treemap = pd.DataFrame()
-                                if not df_treemap.empty and df_treemap['volume'].sum() > 0:
-                                    fig_treemap = px.treemap(df_treemap, path=[px.Constant("All Projects"), 'type', 'project name'], values='volume', color='type', color_discrete_map=type_color_map, title=None, hover_data={'type': False});
-                                    fig_treemap.update_traces(hovertemplate='<b>%{label}</b><br>Type: %{parent}<br>Volume: %{value:,.0f} t<br>% of Total: %{percentRoot:.1%}<extra></extra>', textinfo='label+value', texttemplate="<b>%{label}</b><br>%{value:,.0f} t", textfont_size=14);
-                                    fig_treemap.update_layout(margin=dict(t=10, l=0, r=0, b=0), height=600);
-                                    treemap_placeholder.plotly_chart(fig_treemap, use_container_width=True) # Display in placeholder
-                                else: treemap_placeholder.info(f"No allocation data to display in Treemap for {selected_view_detail}.")
-                            else: treemap_placeholder.info("No allocation data available to generate Treemap.")
+                            # --- REMOVED Treemap generation and display block ---
 
                             # --- Display Detailed Table ---
                             st.markdown("---") # Separator
@@ -687,7 +681,7 @@ else:
         except UnboundLocalError as e: st.error(f"📉 Logic Error: Variable accessed before assignment: {e}")
         except Exception as e: st.error(f"📉 Unexpected error: {e}") # st.exception(e)
 
-    # Footer
+    # Footer (unchanged)
     try:
         local_tz_name = "Europe/Zurich"; local_tz = pytz.timezone(local_tz_name); current_date = datetime.datetime.now(local_tz); tz_name = current_date.strftime('%Z')
     except Exception as e: st.warning(f"Could not determine local timezone ({local_tz_name}), using UTC. Error: {e}"); current_date = datetime.datetime.now(datetime.timezone.utc); tz_name = "UTC" # Fallback
