@@ -514,22 +514,31 @@ with st.sidebar:
         if key not in st.session_state: st.session_state[key] = default_value
 
     if df_upload:
-        @st.cache_data
+         @st.cache_data
         def load_and_prepare_data(uploaded_file):
             try:
                 data = pd.read_csv(uploaded_file)
-                data.columns = data.columns.str.lower().str.strip().str.replace(' ', '_')
+                # --- MODIFIED STANDARDIZATION ---
+                # Replace one or more occurrences of any whitespace with a single underscore
+                data.columns = data.columns.str.lower().str.strip().str.replace(r'\s+', '_', regex=True)
+                standardized_columns_found = data.columns.tolist()
             except Exception as read_error:
-                return None, f"Error reading CSV file: {read_error}", [], [], []
+                return None, f"Error reading or initially processing CSV file: {read_error}. Ensure it's a valid CSV.", [], [], []
 
             core_cols_std = ['project_name', 'project_type', 'priority']
             optional_cols_std = ['description', 'project_link']
-            # NEW: Define standard names for margin columns
             margin_cols_std = ['base_price', 'threshold_price', 'margin_share', 'fixed_purchase_price', 'percental_margin_share']
 
-            missing_essential = [col for col in core_cols_std if col not in data.columns]
+            missing_essential = [col for col in core_cols_std if col not in standardized_columns_found]
             if missing_essential:
-                return None, f"CSV is missing essential columns: {', '.join(missing_essential)}", [], [], []
+                found_cols_str = ", ".join(standardized_columns_found)
+                error_message = (
+                    f"CSV is missing essential columns: {', '.join(missing_essential)}. "
+                    f"The script expects these exact names after standardizing your CSV headers (lowercase, all whitespace to single underscore). "
+                    f"Standardized columns FOUND in your uploaded CSV: [{found_cols_str}]. "
+                    "Please carefully compare the missing list with the found list. If 'project_name', 'project_type', or 'priority' are in the 'FOUND' list but still reported as missing, there might be an extremely subtle issue. Otherwise, check your CSV headers."
+                )
+                return None, error_message, [], [], []
 
             # Ensure all potential margin columns exist, fill with NaN if not in original CSV
             for m_col in margin_cols_std:
@@ -537,46 +546,41 @@ with st.sidebar:
                     data[m_col] = np.nan
 
             numeric_prefixes_std = ['price_', 'available_volume_']
-            cols_to_convert_numeric = ['priority'] + margin_cols_std # Add margin cols here
+            cols_to_convert_numeric = ['priority'] + margin_cols_std
             available_years = set()
-            year_data_cols_found = []
+            year_data_cols_found = [] # these will store standardized names like 'price_2025'
 
-            for col in data.columns:
+            for col in data.columns: # Iterate over standardized column names
                 for prefix in numeric_prefixes_std:
-                    year_part = col[len(prefix):]
-                    if col.startswith(prefix) and year_part.isdigit():
-                        cols_to_convert_numeric.append(col)
-                        year_data_cols_found.append(col)
-                        available_years.add(int(year_part))
-                        break
+                    # Check if the column starts with the prefix AND the rest is a digit (year)
+                    # e.g. col = 'price_2025', prefix = 'price_', year_part = '2025'
+                    if col.startswith(prefix) and col[len(prefix):].isdigit():
+                        cols_to_convert_numeric.append(col) 
+                        year_data_cols_found.append(col)    
+                        available_years.add(int(col[len(prefix):])) 
+                        break 
             
-            if not available_years: # Check if any year-specific price/volume data was found
-                has_price_prefix = any(c.startswith('price_') for c in data.columns)
-                has_vol_prefix = any(c.startswith('available_volume_') for c in data.columns)
-                err_msg = "No columns found matching the 'price_YYYY' or 'available_volume_YYYY' format, which are required for allocation."
-                if has_price_prefix or has_vol_prefix : err_msg = "Found columns starting with 'price_'/'available_volume_', but couldn't extract valid years (YYYY). Please check column naming convention."
-                return None, err_msg, [], [], []
+            if not available_years:
+                 # Handled by later checks if no selected_years possible
+                pass
 
-
-            for col in list(set(cols_to_convert_numeric)): # Use set to avoid duplicates
+            for col in list(set(cols_to_convert_numeric)):
                 if col in data.columns:
-                    data[col] = pd.to_numeric(data[col], errors='coerce') # Coerce errors to NaN
+                    data[col] = pd.to_numeric(data[col], errors='coerce')
 
-            # Handle NaNs/negatives specifically for core & margin columns after numeric conversion
             data['priority'] = data['priority'].fillna(0).clip(lower=0)
-            for m_col in margin_cols_std: # Margin columns can be NaN if not applicable, prices should be non-negative
-                 if m_col in data.columns: # Should be, as added above
+            for m_col in margin_cols_std:
+                 if m_col in data.columns:
                     if m_col in ['base_price', 'threshold_price', 'fixed_purchase_price']:
-                         data[m_col] = data[m_col].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan) # Price-like margin params non-negative or NaN
-                    # margin_share and percental_margin_share can be negative if that's a business logic, or clip at 0. Assuming can be any float for now.
+                         data[m_col] = data[m_col].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan)
 
-            for col in data.columns: # Price and Volume per year
+            for col in data.columns: # Standardized names
                 if col.startswith('available_volume_') and col in year_data_cols_found:
                     data[col] = data[col].fillna(0).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0).clip(lower=0)
                 elif col.startswith('price_') and col in year_data_cols_found:
                     data[col] = data[col].fillna(0.0).apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0).clip(lower=0)
             
-            available_years = sorted(list(available_years))
+            available_years = sorted(list(available_years)) if available_years else []
             invalid_types_found = []
             if 'project_type' in data.columns:
                 data['project_type'] = data['project_type'].astype(str).str.lower().str.strip()
@@ -584,18 +588,15 @@ with st.sidebar:
                 invalid_types_df = data[~data['project_type'].isin(valid_types)]
                 if not invalid_types_df.empty:
                     invalid_types_found = invalid_types_df['project_type'].unique().tolist()
-                    data = data[data['project_type'].isin(valid_types)].copy() # Keep only valid types
-            else: # Should not happen due to earlier check, but as safeguard:
-                return None, "Critical error: 'project_type' column missing despite initial check passing.", available_years, [], []
+                    data = data[data['project_type'].isin(valid_types)].copy()
+            
+            all_expected_std_cols = core_cols_std + margin_cols_std + optional_cols_std + year_data_cols_found
+            cols_to_keep_final = [c for c in all_expected_std_cols if c in data.columns]
+            # Only keep columns that are expected and exist after standardization
+            data = data[list(set(cols_to_keep_final))]
 
-            cols_to_keep = core_cols_std[:] + margin_cols_std[:] # Add margin cols to keep
-            for col in optional_cols_std:
-                if col in data.columns:
-                    cols_to_keep.append(col)
-            cols_to_keep.extend(year_data_cols_found)
-            data = data[list(set(cols_to_keep))] # Use set to ensure unique columns
 
-            # Standardize column names for display (with spaces)
+            # Renaming for display (standardized names to display names with spaces)
             final_rename_map = {
                 'project_name': 'project name', 'project_type': 'project type', 'priority': 'priority',
                 'description': 'Description', 'project_link': 'Project Link',
@@ -603,14 +604,16 @@ with st.sidebar:
                 'margin_share': 'margin share', 'fixed_purchase_price': 'fixed purchase price',
                 'percental_margin_share': 'percental margin share'
             }
-            for yr_col in year_data_cols_found:
-                final_rename_map[yr_col] = yr_col.replace('_', ' ')
+            # For year columns (e.g., price_2025 to price 2025)
+            # yr_col_std here is like 'price_2025' or 'available_volume_2025'
+            for yr_col_std in year_data_cols_found: 
+                final_rename_map[yr_col_std] = yr_col_std.replace('_', ' ') # 'price_2025' -> 'price 2025'
             
-            rename_map_for_df = {k: v for k, v in final_rename_map.items() if k in data.columns}
-            data.rename(columns=rename_map_for_df, inplace=True)
+            rename_map_for_df_final = {k_std: v_disp for k_std, v_disp in final_rename_map.items() if k_std in data.columns}
+            data.rename(columns=rename_map_for_df_final, inplace=True)
 
             project_names_list = []
-            if 'project name' in data.columns:
+            if 'project name' in data.columns: # 'project name' is the display name after rename
                 project_names_list = sorted(data['project name'].unique().tolist())
             
             return data, None, available_years, project_names_list, invalid_types_found
