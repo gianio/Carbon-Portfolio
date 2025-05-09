@@ -16,7 +16,6 @@ import traceback # For detailed error logging
 # ==================================
 st.set_page_config(layout="wide")
 # --- Combined CSS ---
-# Note: Using data-testid can be brittle and break with Streamlit updates.
 css = """
 <style>
     /* Main App background - uncomment if desired */
@@ -63,7 +62,6 @@ css = """
         background-color: #E8F5E9; /* Lightest Green background */
         text-align: center;
         font-size: 1.8em; /* Adjusted font size for value */
-        /* Let columns handle width */
     }
     .metric-box b { /* Style for the label */
         display: block;
@@ -74,14 +72,11 @@ css = """
     }
 
     /* Experimental: Increase font size in dataframes */
-    /* This CSS rule targets dataframe cells and headers. */
-    /* It might be unstable across Streamlit versions. */
     .stDataFrame table td, .stDataFrame table th {
         font-size: 115%; /* Adjusted font size */
     }
 
     /* Styling for the download button */
-    /* WARNING: Targeting specific Streamlit elements may break with updates */
     div[data-testid="stDownloadButton"] > button {
         background-color: #8ca734 !important; /* Requested Green */
         color: white !important;
@@ -96,346 +91,265 @@ css = """
         background-color: #6b8e23 !important; /* Darker shade for hover */
         color: white !important;
     }
-
 </style>
 """
 st.markdown(css, unsafe_allow_html=True)
 
-# Define Color Map for Charts (Green Theme)
 type_color_map = {
     'technical removal': '#66BB6A', 'natural removal': '#AED581', 'reduction': '#388E3C'
 }
-default_color = '#BDBDBD' # Default color for unexpected types
-
+default_color = '#BDBDBD'
 
 # ==================================
 # Allocation Function
 # ==================================
 def allocate_portfolio(
-    project_data: pd.DataFrame,
-    selected_project_names: list,
-    selected_years: list,
-    start_year_portfolio: int,
-    end_year_portfolio: int,
-    constraint_type: str,
-    annual_targets: dict,
-    removal_target_percent_end_year: float,
-    transition_speed: int,
-    category_split: dict,
-    favorite_project: str = None,
-    priority_boost_percent: int = 10,
-    min_target_fulfillment_percent: float = 0.95,
-    min_allocation_chunk: int = 1
+    project_data: pd.DataFrame, selected_project_names: list, selected_years: list,
+    start_year_portfolio: int, end_year_portfolio: int, constraint_type: str, annual_targets: dict,
+    removal_target_percent_end_year: float, transition_speed: int, category_split: dict,
+    favorite_project: str = None, priority_boost_percent: int = 10,
+    min_target_fulfillment_percent: float = 0.95, min_allocation_chunk: int = 1
 ) -> tuple[dict, pd.DataFrame]:
     portfolio_details = {year: [] for year in selected_years}
     yearly_summary_list = []
+    empty_summary_cols = ['Year', f'Target {constraint_type}', 'Allocated Volume', 'Allocated Cost', 'Avg. Price', 'Actual Removal Vol %', 'Target Removal Vol %', 'Total Yearly Margin']
 
     if not selected_project_names:
         st.warning("No projects selected for allocation.")
-        return {}, pd.DataFrame(columns=['Year', f'Target {constraint_type}', 'Allocated Volume', 'Allocated Cost', 'Avg. Price', 'Actual Removal Vol %', 'Target Removal Vol %', 'Total Yearly Margin'])
+        return {}, pd.DataFrame(columns=empty_summary_cols)
 
     project_data_selected = project_data[project_data['project name'].isin(selected_project_names)].copy()
-
     if project_data_selected.empty:
         st.warning("Selected projects not found in the provided data.")
-        return {}, pd.DataFrame(columns=['Year', f'Target {constraint_type}', 'Allocated Volume', 'Allocated Cost', 'Avg. Price', 'Actual Removal Vol %', 'Target Removal Vol %', 'Total Yearly Margin'])
+        return {}, pd.DataFrame(columns=empty_summary_cols)
 
     required_base_cols = ['project name', 'project type', 'priority']
     price_cols_needed, volume_cols_needed = [], []
-    for year in selected_years:
-        price_cols_needed.append(f"price {year}")
-        volume_cols_needed.append(f"available volume {year}")
+    for yr_alloc_setup in selected_years: # Renamed to avoid conflict
+        price_cols_needed.append(f"price {yr_alloc_setup}")
+        volume_cols_needed.append(f"available volume {yr_alloc_setup}")
 
     missing_base = [col for col in required_base_cols if col not in project_data_selected.columns]
-    if missing_base:
-        raise ValueError(f"Input data is missing required base columns for allocation: {', '.join(missing_base)}")
+    if missing_base: raise ValueError(f"Input data missing base columns for allocation: {', '.join(missing_base)}")
 
     missing_years_data = []
-    for year in selected_years:
-        if f"price {year}" not in project_data_selected.columns: missing_years_data.append(f"price {year}")
-        if f"available volume {year}" not in project_data_selected.columns: missing_years_data.append(f"available volume {year}")
-
+    for yr_alloc_check in selected_years: # Renamed
+        if f"price {yr_alloc_check}" not in project_data_selected.columns: missing_years_data.append(f"price {yr_alloc_check}")
+        if f"available volume {yr_alloc_check}" not in project_data_selected.columns: missing_years_data.append(f"available volume {yr_alloc_check}")
     if missing_years_data:
-        years_affected = sorted(list(set(int(col.split()[-1]) for col in missing_years_data if col.split()[-1].isdigit())))
-        raise ValueError(f"Input data is missing price/volume information for required year(s) for allocation: {', '.join(map(str, years_affected))}.")
+        affected_years = sorted(list(set(int(col.split()[-1]) for col in missing_years_data if col.split()[-1].isdigit())))
+        raise ValueError(f"Input data missing price/volume for required year(s): {', '.join(map(str, affected_years))}.")
 
-    numeric_cols_to_check = ['priority'] + price_cols_needed + volume_cols_needed
-    for col in numeric_cols_to_check:
-        if col in project_data_selected.columns:
-            project_data_selected[col] = pd.to_numeric(project_data_selected[col], errors='coerce')
-            if col == 'priority': project_data_selected[col] = project_data_selected[col].fillna(0)
-            elif col.startswith("available volume"): project_data_selected[col] = project_data_selected[col].fillna(0).apply(lambda x: int(x) if pd.notna(x) and x >= 0 else 0).clip(lower=0)
-            elif col.startswith("price"): project_data_selected[col] = project_data_selected[col].fillna(0.0).apply(lambda x: float(x) if pd.notna(x) and x >= 0 else 0.0).clip(lower=0.0)
+    for col_alloc_num in ['priority'] + price_cols_needed + volume_cols_needed: # Renamed
+        if col_alloc_num in project_data_selected.columns:
+            project_data_selected[col_alloc_num] = pd.to_numeric(project_data_selected[col_alloc_num], errors='coerce')
+            if col_alloc_num == 'priority': project_data_selected[col_alloc_num] = project_data_selected[col_alloc_num].fillna(0)
+            elif col_alloc_num.startswith("available volume"): project_data_selected[col_alloc_num] = project_data_selected[col_alloc_num].fillna(0).apply(lambda x: int(x) if pd.notna(x) and x >= 0 else 0).clip(lower=0)
+            elif col_alloc_num.startswith("price"): project_data_selected[col_alloc_num] = project_data_selected[col_alloc_num].fillna(0.0).apply(lambda x: float(x) if pd.notna(x) and x >= 0 else 0.0).clip(lower=0.0)
 
     all_project_types_in_selection = project_data_selected['project type'].unique()
     is_reduction_selected = 'reduction' in all_project_types_in_selection
     total_years_duration = end_year_portfolio - start_year_portfolio
 
-    for year_loop_var in selected_years: # Renamed 'year' to avoid conflict in deeper scopes
-        yearly_target = annual_targets.get(year_loop_var, 0)
-        price_col = f"price {year_loop_var}"
-        volume_col = f"available volume {year_loop_var}"
+    for year_loop in selected_years: # Renamed
+        yearly_target_val = annual_targets.get(year_loop, 0) # Renamed
+        price_col_loop = f"price {year_loop}"; volume_col_loop = f"available volume {year_loop}" # Renamed
+        year_total_allocated_vol, year_total_allocated_cost = 0, 0.0
+        summary_template = {'Year': year_loop, f'Target {constraint_type}': yearly_target_val, 'Allocated Volume': 0, 'Allocated Cost': 0.0, 'Avg. Price': 0.0, 'Actual Removal Vol %': 0.0, 'Target Removal Vol %': 0.0, 'Total Yearly Margin': 0.0}
 
-        year_total_allocated_vol = 0
-        year_total_allocated_cost = 0.0
-        summary_template = {
-            'Year': year_loop_var, f'Target {constraint_type}': yearly_target, 'Allocated Volume': 0,
-            'Allocated Cost': 0.0, 'Avg. Price': 0.0, 'Actual Removal Vol %': 0.0,
-            'Target Removal Vol %': 0.0, 'Total Yearly Margin': 0.0
-        }
+        if yearly_target_val <= 0:
+            yearly_summary_list.append(summary_template); portfolio_details[year_loop] = []; continue
 
-        if yearly_target <= 0:
-            yearly_summary_list.append(summary_template); portfolio_details[year_loop_var] = []; continue
-
-        target_percentages = {}
+        target_percentages = {} # Logic for target_percentages (remains complex as before, using year_loop for year)
         if is_reduction_selected:
-            start_removal_percent = 0.10; end_removal_percent = removal_target_percent_end_year
-            progress = 1.0 if total_years_duration <= 0 else max(0, min(1, (year_loop_var - start_year_portfolio) / total_years_duration))
+            start_rem_pct = 0.10; end_rem_pct = removal_target_percent_end_year
+            progress = 1.0 if total_years_duration <= 0 else max(0, min(1, (year_loop - start_year_portfolio) / total_years_duration))
             exponent = 0.1 + (11 - transition_speed) * 0.2; progress_factor = progress ** exponent
-            target_removal_percent_year = start_removal_percent + (end_removal_percent - start_removal_percent) * progress_factor
-            min_removal_percent = min(start_removal_percent, end_removal_percent); max_removal_percent = max(start_removal_percent, end_removal_percent)
-            target_removal_percent_year = max(min_removal_percent, min(max_removal_percent, target_removal_percent_year))
-            tech_removal_pref = category_split.get('technical removal', 0); nat_removal_pref = category_split.get('natural removal', 0)
-            total_removal_pref = tech_removal_pref + nat_removal_pref
-            target_tech_removal = 0.0; target_nat_removal = 0.0
-            if total_removal_pref > 1e-9:
-                target_tech_removal = target_removal_percent_year * (tech_removal_pref / total_removal_pref)
-                target_nat_removal = target_removal_percent_year * (nat_removal_pref / total_removal_pref)
+            target_rem_pct_yr = start_rem_pct + (end_rem_pct - start_rem_pct) * progress_factor
+            target_rem_pct_yr = max(min(start_rem_pct, end_rem_pct), min(max(start_rem_pct, end_rem_pct), target_rem_pct_yr))
+            tech_pref = category_split.get('technical removal', 0); nat_pref = category_split.get('natural removal', 0)
+            total_rem_pref = tech_pref + nat_pref
+            target_tech_rem, target_nat_rem = 0.0, 0.0
+            if total_rem_pref > 1e-9:
+                target_tech_rem = target_rem_pct_yr * (tech_pref / total_rem_pref)
+                target_nat_rem = target_rem_pct_yr * (nat_pref / total_rem_pref)
             elif 'technical removal' in all_project_types_in_selection or 'natural removal' in all_project_types_in_selection:
-                num_removal_types = ('technical removal' in all_project_types_in_selection) + ('natural removal' in all_project_types_in_selection)
-                share = target_removal_percent_year / num_removal_types if num_removal_types > 0 else 0
-                if 'technical removal' in all_project_types_in_selection: target_tech_removal = share
-                if 'natural removal' in all_project_types_in_selection: target_nat_removal = share
-            target_reduction = max(0.0, 1.0 - target_tech_removal - target_nat_removal)
-            target_percentages = {'reduction': target_reduction, 'technical removal': target_tech_removal, 'natural removal': target_nat_removal}
+                num_rem_types = ('technical removal' in all_project_types_in_selection) + ('natural removal' in all_project_types_in_selection)
+                share = target_rem_pct_yr / num_rem_types if num_rem_types > 0 else 0
+                if 'technical removal' in all_project_types_in_selection: target_tech_rem = share
+                if 'natural removal' in all_project_types_in_selection: target_nat_rem = share
+            target_percentages = {'reduction': max(0.0, 1.0 - target_tech_rem - target_nat_rem), 'technical removal': target_tech_rem, 'natural removal': target_nat_rem}
         else:
-            tech_removal_pref = category_split.get('technical removal', 0); nat_removal_pref = category_split.get('natural removal', 0)
-            total_removal_pref = tech_removal_pref + nat_removal_pref
-            tech_selected = 'technical removal' in all_project_types_in_selection; nat_selected = 'natural removal' in all_project_types_in_selection
-            tech_alloc_share = 0.0; nat_alloc_share = 0.0
-            if total_removal_pref > 1e-9:
-                if tech_selected: tech_alloc_share = tech_removal_pref / total_removal_pref
-                if nat_selected: nat_alloc_share = nat_removal_pref / total_removal_pref
+            tech_pref = category_split.get('technical removal', 0); nat_pref = category_split.get('natural removal', 0)
+            total_pref = tech_pref + nat_pref
+            tech_sel = 'technical removal' in all_project_types_in_selection; nat_sel = 'natural removal' in all_project_types_in_selection
+            tech_share, nat_share = 0.0, 0.0
+            if total_pref > 1e-9:
+                if tech_sel: tech_share = tech_pref / total_pref
+                if nat_sel: nat_share = nat_pref / total_pref
             else:
-                num_removal_types = tech_selected + nat_selected; share = 1.0 / num_removal_types if num_removal_types > 0 else 0
-                if tech_selected: tech_alloc_share = share
-                if nat_selected: nat_alloc_share = share
-            total_alloc_share = tech_alloc_share + nat_alloc_share
-            if total_alloc_share > 1e-9:
-                target_percentages['technical removal'] = (tech_alloc_share / total_alloc_share) if tech_selected else 0.0
-                target_percentages['natural removal'] = (nat_alloc_share / total_alloc_share) if nat_selected else 0.0
-            elif tech_selected or nat_selected:
-                 target_percentages['technical removal'] = 1.0 if tech_selected and not nat_selected else (0.5 if tech_selected and nat_selected else 0.0)
-                 target_percentages['natural removal'] = 1.0 if nat_selected and not tech_selected else (0.5 if tech_selected and nat_selected else 0.0)
-            else:
-                 target_percentages['technical removal'] = 0.0; target_percentages['natural removal'] = 0.0
+                num_sel_types = tech_sel + nat_sel; base_share = 1.0 / num_sel_types if num_sel_types > 0 else 0
+                if tech_sel: tech_share = base_share
+                if nat_sel: nat_share = base_share
+            total_share = tech_share + nat_share
+            if total_share > 1e-9:
+                target_percentages['technical removal'] = (tech_share / total_share) if tech_sel else 0.0
+                target_percentages['natural removal'] = (nat_share / total_share) if nat_sel else 0.0
+            else: target_percentages['technical removal'], target_percentages['natural removal'] = 0.0, 0.0
             target_percentages['reduction'] = 0.0
-
-        current_sum = sum(target_percentages.values())
-        if abs(current_sum - 1.0) > 1e-6 and current_sum > 0:
-            norm_factor = 1.0 / current_sum
+        
+        current_sum_pct = sum(target_percentages.values()) # Renamed
+        if abs(current_sum_pct - 1.0) > 1e-6 and current_sum_pct > 0:
+            norm_factor = 1.0 / current_sum_pct
             target_percentages = {ptype: share * norm_factor for ptype, share in target_percentages.items()}
         summary_template['Target Removal Vol %'] = (target_percentages.get('technical removal', 0) + target_percentages.get('natural removal', 0)) * 100
 
-        projects_year_df = project_data_selected[(project_data_selected[price_col] > 0) & (project_data_selected[volume_col] >= min_allocation_chunk)].copy()
-        projects_year_df['initial_allocated_volume'] = 0; projects_year_df['initial_allocated_cost'] = 0.0
-        projects_year_df['final_priority'] = np.nan
+        projects_year_df_loop = project_data_selected[(project_data_selected[price_col_loop] > 0) & (project_data_selected[volume_col_loop] >= min_allocation_chunk)].copy() # Renamed
+        projects_year_df_loop['initial_allocated_volume'] = 0; projects_year_df_loop['initial_allocated_cost'] = 0.0
+        projects_year_df_loop['final_priority'] = np.nan
 
-        if projects_year_df.empty:
-            yearly_summary_list.append(summary_template); portfolio_details[year_loop_var] = []; continue
+        if projects_year_df_loop.empty:
+            yearly_summary_list.append(summary_template); portfolio_details[year_loop] = []; continue
 
-        for project_type_alloc_loop in all_project_types_in_selection:
-            target_share = target_percentages.get(project_type_alloc_loop, 0)
-            if target_share <= 0: continue
-            target_resource = yearly_target * target_share
-            projects_of_type = projects_year_df[projects_year_df['project type'] == project_type_alloc_loop].copy()
-            if projects_of_type.empty: continue
+        for project_type_main_loop in all_project_types_in_selection: # Renamed
+            target_share_val = target_percentages.get(project_type_main_loop, 0) # Renamed
+            if target_share_val <= 0: continue
+            target_resource_val = yearly_target_val * target_share_val # Renamed
+            projects_of_type_loop = projects_year_df_loop[projects_year_df_loop['project type'] == project_type_main_loop].copy() # Renamed
+            if projects_of_type_loop.empty: continue
 
-            total_priority_in_type = projects_of_type['priority'].sum()
-            if total_priority_in_type <= 0:
-                num_projects_in_type = len(projects_of_type)
-                projects_of_type['norm_prio_base'] = (1.0 / num_projects_in_type) if num_projects_in_type > 0 else 0
-            else: projects_of_type['norm_prio_base'] = projects_of_type['priority'] / total_priority_in_type
-            current_priorities = projects_of_type.set_index('project name')['norm_prio_base'].to_dict()
-            final_priorities = current_priorities.copy()
+            total_prio_type = projects_of_type_loop['priority'].sum() # Renamed
+            if total_prio_type <= 0: projects_of_type_loop['norm_prio_base'] = (1.0 / len(projects_of_type_loop)) if len(projects_of_type_loop) > 0 else 0
+            else: projects_of_type_loop['norm_prio_base'] = projects_of_type_loop['priority'] / total_prio_type
+            current_priorities_dict = projects_of_type_loop.set_index('project name')['norm_prio_base'].to_dict() # Renamed
+            final_priorities_dict = current_priorities_dict.copy() # Renamed
 
-            if favorite_project and favorite_project in final_priorities and projects_of_type.loc[projects_of_type['project name'] == favorite_project, 'project type'].iloc[0] == project_type_alloc_loop :
-                fav_proj_base_prio = current_priorities[favorite_project]; boost_factor = priority_boost_percent / 100.0
-                priority_increase = fav_proj_base_prio * boost_factor; new_fav_proj_prio = fav_proj_base_prio + priority_increase
-                other_projects = [p for p in current_priorities if p != favorite_project]
-                sum_other_priorities = sum(current_priorities[p] for p in other_projects)
-                temp_priorities = {favorite_project: new_fav_proj_prio}; reduction_factor = 0
-                if sum_other_priorities > 1e-9: reduction_factor = priority_increase / sum_other_priorities
-                for name in other_projects: temp_priorities[name] = max(0, current_priorities[name] * (1 - reduction_factor))
-                total_final_prio = sum(temp_priorities.values())
-                if total_final_prio > 1e-9: final_priorities = {p: prio / total_final_prio for p, prio in temp_priorities.items()}
-                elif favorite_project in temp_priorities : final_priorities = {favorite_project: 1.0}
+            if favorite_project and favorite_project in final_priorities_dict and projects_of_type_loop.loc[projects_of_type_loop['project name'] == favorite_project, 'project type'].iloc[0] == project_type_main_loop :
+                fav_base = current_priorities_dict[favorite_project]; boost = priority_boost_percent / 100.0 # Renamed
+                increase = fav_base * boost; new_fav_prio = fav_base + increase # Renamed
+                others = [p for p in current_priorities_dict if p != favorite_project]; sum_others = sum(current_priorities_dict[p] for p in others) # Renamed
+                temp_prios = {favorite_project: new_fav_prio}; reduc_factor = increase / sum_others if sum_others > 1e-9 else 0 # Renamed
+                for p_name in others: temp_prios[p_name] = max(0, current_priorities_dict[p_name] * (1 - reduc_factor)) # Renamed
+                total_final = sum(temp_prios.values()) # Renamed
+                if total_final > 1e-9: final_priorities_dict = {p: prio / total_final for p, prio in temp_prios.items()}
+                elif favorite_project in temp_prios : final_priorities_dict = {favorite_project: 1.0}
 
-            project_weights = {}; total_weight = 0
+            project_weights_dict = {}; total_weight_val = 0 # Renamed
             if constraint_type == 'Budget':
-                for _, row_budget_loop in projects_of_type.iterrows():
-                    name_budget = row_budget_loop['project name']; final_prio_budget = final_priorities.get(name_budget, 0); price_budget = row_budget_loop[price_col]
-                    weight = final_prio_budget * price_budget if price_budget > 0 else 0; project_weights[name_budget] = weight; total_weight += weight
+                for _, r_budget in projects_of_type_loop.iterrows(): # Renamed
+                    name_b = r_budget['project name']; final_p_b = final_priorities_dict.get(name_b, 0); price_b = r_budget[price_col_loop] # Renamed
+                    weight_b = final_p_b * price_b if price_b > 0 else 0; project_weights_dict[name_b] = weight_b; total_weight_val += weight_b # Renamed
 
-            for idx_alloc_loop, row_alloc_loop in projects_of_type.iterrows():
-                name_alloc = row_alloc_loop['project name']; final_prio_alloc = final_priorities.get(name_alloc, 0); available_vol_alloc = row_alloc_loop[volume_col]; price_alloc = row_alloc_loop[price_col]
-                allocated_volume = 0; allocated_cost = 0.0
-                projects_year_df.loc[projects_year_df['project name'] == name_alloc, 'final_priority'] = final_prio_alloc
-                if final_prio_alloc <= 0 or price_alloc <= 0 or available_vol_alloc < min_allocation_chunk: continue
+            for idx_main_alloc, r_main_alloc in projects_of_type_loop.iterrows(): # Renamed
+                name_ma = r_main_alloc['project name']; final_p_ma = final_priorities_dict.get(name_ma, 0); avail_vol_ma = r_main_alloc[volume_col_loop]; price_ma = r_main_alloc[price_col_loop] # Renamed
+                alloc_vol, alloc_cost = 0, 0.0 # Renamed
+                projects_year_df_loop.loc[projects_year_df_loop['project name'] == name_ma, 'final_priority'] = final_p_ma
+                if final_p_ma <= 0 or price_ma <= 0 or avail_vol_ma < min_allocation_chunk: continue
 
-                if constraint_type == 'Volume':
-                    target_volume_proj = target_resource * final_prio_alloc
-                    allocated_volume = min(target_volume_proj, available_vol_alloc)
+                if constraint_type == 'Volume': alloc_vol = min(target_resource_val * final_p_ma, avail_vol_ma)
                 elif constraint_type == 'Budget':
-                    if total_weight > 1e-9:
-                        weight_normalized = project_weights.get(name_alloc, 0) / total_weight
-                        target_budget_proj = target_resource * weight_normalized
-                        target_volume_proj = target_budget_proj / price_alloc if price_alloc > 0 else 0
-                        allocated_volume = min(target_volume_proj, available_vol_alloc)
-                    elif len(projects_of_type) == 1:
-                             target_volume_proj = target_resource / price_alloc if price_alloc > 0 else 0
-                             allocated_volume = min(target_volume_proj, available_vol_alloc)
-                    else: allocated_volume = 0
+                    if total_weight_val > 1e-9:
+                        norm_w = project_weights_dict.get(name_ma, 0) / total_weight_val; budget_proj = target_resource_val * norm_w # Renamed
+                        alloc_vol = min(budget_proj / price_ma if price_ma > 0 else 0, avail_vol_ma)
+                    elif len(projects_of_type_loop) == 1: alloc_vol = min(target_resource_val / price_ma if price_ma > 0 else 0, avail_vol_ma)
                 
-                allocated_volume = int(max(0, math.floor(allocated_volume / min_allocation_chunk) * min_allocation_chunk))
-
-                if allocated_volume >= min_allocation_chunk:
-                    allocated_cost = allocated_volume * price_alloc
-                    # Locate the correct row in projects_year_df to update
-                    project_index_in_year_df = projects_year_df[projects_year_df['project name'] == name_alloc].index
-                    if not project_index_in_year_df.empty:
-                        idx_to_update = project_index_in_year_df[0]
-                        projects_year_df.loc[idx_to_update, 'initial_allocated_volume'] += allocated_volume
-                        projects_year_df.loc[idx_to_update, 'initial_allocated_cost'] += allocated_cost
-                    year_total_allocated_vol += allocated_volume; year_total_allocated_cost += allocated_cost
+                alloc_vol = int(max(0, math.floor(alloc_vol / min_allocation_chunk) * min_allocation_chunk))
+                if alloc_vol >= min_allocation_chunk:
+                    alloc_cost = alloc_vol * price_ma
+                    idx_update = projects_year_df_loop[projects_year_df_loop['project name'] == name_ma].index[0] # Renamed
+                    projects_year_df_loop.loc[idx_update, 'initial_allocated_volume'] += alloc_vol
+                    projects_year_df_loop.loc[idx_update, 'initial_allocated_cost'] += alloc_cost
+                    year_total_allocated_vol += alloc_vol; year_total_allocated_cost += alloc_cost
         
-        target_threshold = yearly_target * min_target_fulfillment_percent
-        current_metric_total = year_total_allocated_cost if constraint_type == 'Budget' else year_total_allocated_vol
+        target_thresh = yearly_target_val * min_target_fulfillment_percent # Renamed
+        current_metric = year_total_allocated_cost if constraint_type == 'Budget' else year_total_allocated_vol # Renamed
+        if current_metric < target_thresh and yearly_target_val > 0 :
+            needed_val = target_thresh - current_metric # Renamed
+            projects_year_df_loop['remaining_volume'] = projects_year_df_loop[volume_col_loop] - projects_year_df_loop['initial_allocated_volume']
+            adj_candidates = projects_year_df_loop[(projects_year_df_loop['remaining_volume'] >= min_allocation_chunk) & (projects_year_df_loop[price_col_loop] > 0)].sort_values(by=['priority', price_col_loop], ascending=[False, True]).copy() # Renamed
+            for _, r_adj in adj_candidates.iterrows(): # Renamed
+                if needed_val <= (1e-2 if constraint_type=='Budget' else 0): break
+                name_adj_loop = r_adj['project name']; price_adj_loop = r_adj[price_col_loop]; avail_adj = r_adj['remaining_volume'] # Renamed
+                vol_add, cost_add = 0, 0.0 # Renamed
+                if constraint_type == 'Volume': add_vol_val = min(avail_adj, needed_val) # Renamed
+                else: max_afford = needed_val / price_adj_loop if price_adj_loop > 0 else 0; add_vol_val = min(avail_adj, max_afford) # Renamed
+                add_chunked = int(math.floor(add_vol_val / min_allocation_chunk) * min_allocation_chunk) # Renamed
+                if add_chunked >= min_allocation_chunk:
+                    cost_inc = add_chunked * price_adj_loop # Renamed
+                    if constraint_type == 'Volume' or (cost_inc <= needed_val * 1.1 or cost_inc < price_adj_loop * min_allocation_chunk * 1.5):
+                        vol_add, cost_add = add_chunked, cost_inc
+                        needed_val -= cost_add if constraint_type == 'Budget' else vol_add
+                if vol_add > 0:
+                    idx_update_adj = projects_year_df_loop[projects_year_df_loop['project name'] == name_adj_loop].index[0] # Renamed
+                    projects_year_df_loop.loc[idx_update_adj, 'initial_allocated_volume'] += vol_add
+                    projects_year_df_loop.loc[idx_update_adj, 'initial_allocated_cost'] += cost_add
+                    year_total_allocated_vol += vol_add; year_total_allocated_cost += cost_add
 
-        if current_metric_total < target_threshold and yearly_target > 0 :
-            needed = target_threshold - current_metric_total
-            projects_year_df['remaining_volume'] = projects_year_df[volume_col] - projects_year_df['initial_allocated_volume']
-            adjustment_candidates = projects_year_df[
-                (projects_year_df['remaining_volume'] >= min_allocation_chunk) &
-                (projects_year_df[price_col] > 0)
-            ].sort_values(by=['priority', price_col], ascending=[False, True]).copy()
-
-            for idx_adj_loop, row_adj_loop in adjustment_candidates.iterrows():
-                if needed <= (1e-2 if constraint_type=='Budget' else 0): break
-                name_adj = row_adj_loop['project name']; price_adj = row_adj_loop[price_col]; available_for_adj = row_adj_loop['remaining_volume']
-                volume_to_add = 0; cost_to_add = 0.0
-
-                if constraint_type == 'Volume': add_vol = min(available_for_adj, needed)
-                else: max_affordable_vol = needed / price_adj if price_adj > 0 else 0; add_vol = min(available_for_adj, max_affordable_vol)
-                
-                add_vol_chunked = int(math.floor(add_vol / min_allocation_chunk) * min_allocation_chunk)
-
-                if add_vol_chunked >= min_allocation_chunk:
-                    cost_increase = add_vol_chunked * price_adj
-                    if constraint_type == 'Volume' or (cost_increase <= needed * 1.1 or cost_increase < price_adj * min_allocation_chunk * 1.5):
-                        volume_to_add = add_vol_chunked; cost_to_add = cost_increase
-                        needed -= cost_to_add if constraint_type == 'Budget' else volume_to_add
-                
-                if volume_to_add > 0:
-                    project_index_in_year_df_adj = projects_year_df[projects_year_df['project name'] == name_adj].index
-                    if not project_index_in_year_df_adj.empty:
-                        idx_to_update_adj = project_index_in_year_df_adj[0]
-                        projects_year_df.loc[idx_to_update_adj, 'initial_allocated_volume'] += volume_to_add
-                        projects_year_df.loc[idx_to_update_adj, 'initial_allocated_cost'] += cost_to_add
-                    year_total_allocated_vol += volume_to_add; year_total_allocated_cost += cost_to_add
-
-        final_allocations_list = []
-        final_year_allocations_df = projects_year_df[projects_year_df['initial_allocated_volume'] >= min_allocation_chunk].copy()
-        for _, row_final_loop in final_year_allocations_df.iterrows():
-            current_price = row_final_loop.get(price_col, None)
-            final_allocations_list.append({
-                'project name': row_final_loop['project name'], 'type': row_final_loop['project type'],
-                'allocated_volume': row_final_loop['initial_allocated_volume'],
-                'allocated_cost': row_final_loop['initial_allocated_cost'],
-                'price_used': current_price, 'priority_applied': row_final_loop['final_priority']
-            })
-        portfolio_details[year_loop_var] = final_allocations_list
-        summary_template['Allocated Volume'] = year_total_allocated_vol
-        summary_template['Allocated Cost'] = year_total_allocated_cost
-        summary_template['Avg. Price'] = (year_total_allocated_cost / year_total_allocated_vol) if year_total_allocated_vol > 0 else 0.0
-        removal_volume = sum(p['allocated_volume'] for p in final_allocations_list if p['type'] in ['technical removal', 'natural removal'])
-        summary_template['Actual Removal Vol %'] = (removal_volume / year_total_allocated_vol * 100) if year_total_allocated_vol > 0 else 0.0
+        final_alloc_list = [] # Renamed
+        final_year_alloc_df_loop = projects_year_df_loop[projects_year_df_loop['initial_allocated_volume'] >= min_allocation_chunk].copy() # Renamed
+        for _, r_final in final_year_alloc_df_loop.iterrows(): # Renamed
+            price_final = r_final.get(price_col_loop, None) # Renamed
+            final_alloc_list.append({'project name': r_final['project name'], 'type': r_final['project type'], 'allocated_volume': r_final['initial_allocated_volume'], 'allocated_cost': r_final['initial_allocated_cost'], 'price_used': price_final, 'priority_applied': r_final['final_priority']})
+        portfolio_details[year_loop] = final_alloc_list
+        summary_template.update({'Allocated Volume': year_total_allocated_vol, 'Allocated Cost': year_total_allocated_cost, 'Avg. Price': (year_total_allocated_cost / year_total_allocated_vol) if year_total_allocated_vol > 0 else 0.0})
+        rem_vol_final = sum(p['allocated_volume'] for p in final_alloc_list if p['type'] in ['technical removal', 'natural removal']) # Renamed
+        summary_template['Actual Removal Vol %'] = (rem_vol_final / year_total_allocated_vol * 100) if year_total_allocated_vol > 0 else 0.0
         yearly_summary_list.append(summary_template)
 
-    yearly_summary_df = pd.DataFrame(yearly_summary_list)
+    yearly_summary_df_res = pd.DataFrame(yearly_summary_list) # Renamed
+    if yearly_summary_df_res.empty and selected_years: # Ensure columns exist even if no iterations ran but years were expected
+        yearly_summary_df_res = pd.DataFrame(columns=empty_summary_cols)
 
-    if constraint_type == 'Budget':
-        check_df = yearly_summary_df.copy()
-        check_df['Target Budget'] = check_df['Year'].map(annual_targets).fillna(0)
-        is_overbudget = check_df['Allocated Cost'] > check_df['Target Budget'] * 1.001
-        overbudget_years_df = check_df[is_overbudget]
-        if not overbudget_years_df.empty:
-            st.warning(f"Budget target may have been slightly exceeded in year(s): {overbudget_years_df['Year'].tolist()} due to allocation adjustments or minimum chunk requirements.")
-    return portfolio_details, yearly_summary_df
+
+    if constraint_type == 'Budget' and not yearly_summary_df_res.empty: # Check if not empty
+        check_df_budget = yearly_summary_df_res.copy() # Renamed
+        check_df_budget['Target Budget'] = check_df_budget['Year'].map(annual_targets).fillna(0)
+        is_overbudget_val = check_df_budget['Allocated Cost'] > check_df_budget['Target Budget'] * 1.001 # Renamed
+        overbudget_df = check_df_budget[is_overbudget_val] # Renamed
+        if not overbudget_df.empty: st.warning(f"Budget target slightly exceeded in year(s): {overbudget_df['Year'].tolist()}")
+    return portfolio_details, yearly_summary_df_res
 
 # ==================================
 # Margin Calculation Functions
 # ==================================
 def get_margin_per_unit(project_data_row: pd.Series, allocated_price_this_year: float) -> float:
     if pd.isna(allocated_price_this_year) or allocated_price_this_year < 0: return 0.0
-
-    base_price_col = 'base price'; threshold_price_col = 'threshold price'
-    margin_share_col = 'margin share'; fixed_purchase_price_col = 'fixed purchase price'
-    percental_margin_share_col = 'percental margin share'
-    margin_per_unit = 0.0
-
-    bp = project_data_row.get(base_price_col); tp = project_data_row.get(threshold_price_col)
-    ms = project_data_row.get(margin_share_col)
-
+    base_price_col, threshold_price_col, margin_share_col, fixed_purchase_price_col, percental_margin_share_col = 'base price', 'threshold price', 'margin share', 'fixed purchase price', 'percental margin share'
+    margin_pu = 0.0 # Renamed
+    bp, tp, ms = project_data_row.get(base_price_col), project_data_row.get(threshold_price_col), project_data_row.get(margin_share_col)
     try:
         if pd.notna(bp) and pd.notna(tp) and pd.notna(ms):
             bp, tp, ms = float(bp), float(tp), float(ms)
-            margin_from_share = max(0, allocated_price_this_year - tp) * ms
-            margin_from_base_to_threshold = tp - bp
-            margin_per_unit = margin_from_share + margin_from_base_to_threshold
-        elif pd.notna(project_data_row.get(fixed_purchase_price_col)):
-            fpp = float(project_data_row.get(fixed_purchase_price_col))
-            margin_per_unit = allocated_price_this_year - fpp
-        elif pd.notna(project_data_row.get(percental_margin_share_col)):
-            pms_val = float(project_data_row.get(percental_margin_share_col)) # Renamed pms
-            margin_per_unit = allocated_price_this_year * pms_val
-    except (ValueError, TypeError): margin_per_unit = 0.0 # Fallback if conversion fails
-    
-    return margin_per_unit if pd.notna(margin_per_unit) and margin_per_unit > -float('inf') else 0.0
+            margin_pu = max(0, allocated_price_this_year - tp) * ms + (tp - bp)
+        elif pd.notna(project_data_row.get(fixed_purchase_price_col)): margin_pu = allocated_price_this_year - float(project_data_row.get(fixed_purchase_price_col))
+        elif pd.notna(project_data_row.get(percental_margin_share_col)): margin_pu = allocated_price_this_year * float(project_data_row.get(percental_margin_share_col))
+    except (ValueError, TypeError): margin_pu = 0.0
+    return margin_pu if pd.notna(margin_pu) and margin_pu > -float('inf') else 0.0
 
 def add_margins_to_details_df(details_df: pd.DataFrame, project_master_data: pd.DataFrame) -> pd.DataFrame:
-    if details_df.empty or project_master_data.empty:
-        details_df['margin_per_unit'] = 0.0; details_df['margin'] = 0.0
+    if details_df.empty: # Simplified check, project_master_data should exist if details_df is processed
+        details_df['margin_per_unit'], details_df['margin'] = 0.0, 0.0
         return details_df
-
-    details_with_margins_list = [] # Renamed details_with_margins
-    project_lookup = project_master_data.set_index('project name')
-
-    for _, row_detail_margin in details_df.iterrows(): # Renamed row
-        project_name = row_detail_margin['project name']; allocated_volume = row_detail_margin['volume']
-        price_used = row_detail_margin['price']
-        new_row_dict = row_detail_margin.to_dict() # Renamed new_row
-        margin_val, margin_pu_val = 0.0, 0.0
-
-        if project_name in project_lookup.index:
-            project_data_row = project_lookup.loc[project_name]
-            if pd.notna(price_used) and allocated_volume > 0:
-                margin_pu_val = get_margin_per_unit(project_data_row, price_used)
-                margin_val = margin_pu_val * allocated_volume
-        
-        new_row_dict['margin_per_unit'] = margin_pu_val; new_row_dict['margin'] = margin_val
-        details_with_margins_list.append(new_row_dict)
-    return pd.DataFrame(details_with_margins_list)
+    rows_with_margins = [] # Renamed
+    project_lookup_margin = project_master_data.set_index('project name') # Renamed
+    for _, row_margin_calc in details_df.iterrows(): # Renamed
+        proj_name_margin = row_margin_calc['project name']; alloc_vol_margin = row_margin_calc['volume']; price_used_margin = row_margin_calc['price'] # Renamed
+        new_row_data = row_margin_calc.to_dict() # Renamed
+        margin_total, margin_pu = 0.0, 0.0 # Renamed
+        if proj_name_margin in project_lookup_margin.index and pd.notna(price_used_margin) and alloc_vol_margin > 0:
+            proj_data_row_margin = project_lookup_margin.loc[proj_name_margin] # Renamed
+            margin_pu = get_margin_per_unit(proj_data_row_margin, price_used_margin)
+            margin_total = margin_pu * alloc_vol_margin
+        new_row_data.update({'margin_per_unit': margin_pu, 'margin': margin_total})
+        rows_with_margins.append(new_row_data)
+    return pd.DataFrame(rows_with_margins) if rows_with_margins else details_df # Return original if list empty
 
 # ==================================
 # Streamlit App Layout & Logic
 # ==================================
 with st.sidebar:
     st.markdown("## 1. Load Data")
-    df_upload = st.file_uploader(
-        "Upload Project Data CSV", type="csv", key="uploader_sidebar",
-        help="Required: `project name`, `project type`, `priority`, `price_YYYY`, `available_volume_YYYY`. Optional margins: `base price`, `threshold price`, `margin share`, `fixed purchase price`, `percental margin share`. Optional: `description`, `project_link`."
-    )
+    df_upload = st.file_uploader("Upload Project Data CSV", type="csv", key="uploader_sidebar", help="Required: `project name`, `project type`, `priority`, `price_YYYY`, `available_volume_YYYY`. Optional margins: `base price`, `threshold price`, `margin share`, `fixed purchase price`, `percental margin share`. Optional: `description`, `project_link`.")
     default_values = {'working_data_full': None, 'selected_years': [], 'selected_projects': [], 'project_names': [], 'favorite_projects_selection': [], 'actual_start_year': None, 'actual_end_year': None, 'available_years_in_data': [], 'constraint_type': 'Volume', 'removal_target_end_year': 0.8, 'transition_speed': 5, 'category_split': {'technical removal': 0.5, 'natural removal': 0.5}, 'annual_targets': {}, 'master_target': None, 'data_loaded_successfully': False, 'years_slider_sidebar': 5, 'min_fulfillment_perc': 95, 'removal_preference_slider': 5, 'min_alloc_chunk': 1}
     for key, default_value in default_values.items():
         if key not in st.session_state: st.session_state[key] = default_value
@@ -444,11 +358,17 @@ with st.sidebar:
         @st.cache_data
         def load_and_prepare_data(uploaded_file):
             try:
-                data = pd.read_csv(uploaded_file)
+                data = pd.read_csv(uploaded_file, sep=';', encoding='utf-8-sig')
                 data.columns = data.columns.str.lower().str.strip().str.replace(r'\s+', '_', regex=True)
                 standardized_columns_found = data.columns.tolist()
             except Exception as read_error:
-                return None, f"Error reading or initially processing CSV file: {read_error}. Ensure it's a valid CSV.", [], [], []
+                try:
+                    if hasattr(uploaded_file, 'seek'): uploaded_file.seek(0)
+                    data = pd.read_csv(uploaded_file, sep=';')
+                    data.columns = data.columns.str.lower().str.strip().str.replace(r'\s+', '_', regex=True)
+                    standardized_columns_found = data.columns.tolist()
+                except Exception as read_error_fallback:
+                    return None, f"Error reading/processing CSV (tried utf-8-sig & default; delimiter=';'): {read_error} / {read_error_fallback}", [], [], []
 
             core_cols_std = ['project_name', 'project_type', 'priority']
             optional_cols_std = ['description', 'project_link']
@@ -457,190 +377,178 @@ with st.sidebar:
             missing_essential = [col for col in core_cols_std if col not in standardized_columns_found]
             if missing_essential:
                 found_cols_str = ", ".join(standardized_columns_found)
-                error_message = (
-                    f"CSV is missing essential columns: {', '.join(missing_essential)}. "
-                    f"The script expects these exact names after standardizing your CSV headers (lowercase, all whitespace to single underscore). "
-                    f"Standardized columns FOUND in your uploaded CSV: [{found_cols_str}]. "
-                    "Please carefully compare the missing list with the found list. If 'project_name', 'project_type', or 'priority' are in the 'FOUND' list but still reported as missing, there might be an extremely subtle issue. Otherwise, check your CSV headers."
-                )
-                return None, error_message, [], [], []
+                return None, f"CSV missing essential columns: {', '.join(missing_essential)}. Expected after standardization (lowercase, whitespace to underscore). FOUND: [{found_cols_str}]. Check CSV headers & delimiter (';' expected).", [], [], []
 
+            if 'treshold_price' in data.columns and 'threshold_price' not in data.columns:
+                data.rename(columns={'treshold_price': 'threshold_price'}, inplace=True)
+            
             for m_col in margin_cols_std:
                 if m_col not in data.columns: data[m_col] = np.nan
-
+            
             numeric_prefixes_std = ['price_', 'available_volume_']
             cols_to_convert_numeric = ['priority'] + margin_cols_std
-            available_years = set(); year_data_cols_found = []
+            available_years_set = set(); year_data_cols_found_list = [] # Renamed
 
-            for col in data.columns:
-                for prefix in numeric_prefixes_std:
-                    if col.startswith(prefix) and col[len(prefix):].isdigit():
-                        cols_to_convert_numeric.append(col); year_data_cols_found.append(col)
-                        available_years.add(int(col[len(prefix):])); break
+            for col_scan in data.columns: # Renamed
+                for prefix_scan in numeric_prefixes_std: # Renamed
+                    if col_scan.startswith(prefix_scan) and col_scan[len(prefix_scan):].isdigit():
+                        cols_to_convert_numeric.append(col_scan); year_data_cols_found_list.append(col_scan)
+                        available_years_set.add(int(col_scan[len(prefix_scan):])); break
             
-            if not available_years: st.sidebar.warning("No columns like 'price_YYYY' or 'available_volume_YYYY' found. Allocation might not be meaningful.")
+            if not available_years_set: st.sidebar.warning("No 'price_YYYY' or 'available_volume_YYYY' columns found. Allocation might be affected.")
 
-            for col in list(set(cols_to_convert_numeric)):
-                if col in data.columns: data[col] = pd.to_numeric(data[col], errors='coerce')
+            for col_num_conv in list(set(cols_to_convert_numeric)): # Renamed
+                if col_num_conv in data.columns: data[col_num_conv] = pd.to_numeric(data[col_num_conv], errors='coerce')
 
             data['priority'] = data['priority'].fillna(0).clip(lower=0)
-            for m_col in margin_cols_std:
-                 if m_col in data.columns:
-                    if m_col in ['base_price', 'threshold_price', 'fixed_purchase_price']:
-                         data[m_col] = data[m_col].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan)
+            for m_col_proc in margin_cols_std: # Renamed
+                 if m_col_proc in data.columns: 
+                    if m_col_proc in ['base_price', 'threshold_price', 'fixed_purchase_price']: data[m_col_proc] = data[m_col_proc].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan)
 
-            for col in data.columns:
-                if col.startswith('available_volume_') and col in year_data_cols_found: data[col] = data[col].fillna(0).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0).clip(lower=0)
-                elif col.startswith('price_') and col in year_data_cols_found: data[col] = data[col].fillna(0.0).apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0).clip(lower=0)
+            for col_yr_proc in data.columns: # Renamed
+                if col_yr_proc.startswith('available_volume_') and col_yr_proc in year_data_cols_found_list: data[col_yr_proc] = data[col_yr_proc].fillna(0).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0).clip(lower=0)
+                elif col_yr_proc.startswith('price_') and col_yr_proc in year_data_cols_found_list: data[col_yr_proc] = data[col_yr_proc].fillna(0.0).apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0).clip(lower=0)
             
-            available_years = sorted(list(available_years)) if available_years else []
-            invalid_types_found = []
+            available_years_list = sorted(list(available_years_set)) if available_years_set else [] # Renamed
+            invalid_types_list = [] # Renamed
             if 'project_type' in data.columns:
                 data['project_type'] = data['project_type'].astype(str).str.lower().str.strip()
                 valid_types = ['reduction', 'technical removal', 'natural removal']
-                invalid_types_df = data[~data['project_type'].isin(valid_types)]
-                if not invalid_types_df.empty:
-                    invalid_types_found = invalid_types_df['project_type'].unique().tolist()
+                invalid_df = data[~data['project_type'].isin(valid_types)] # Renamed
+                if not invalid_df.empty:
+                    invalid_types_list = invalid_df['project_type'].unique().tolist()
                     data = data[data['project_type'].isin(valid_types)].copy()
             
-            all_expected_std_cols = core_cols_std + margin_cols_std + optional_cols_std + year_data_cols_found
-            cols_to_keep_final = [c for c in all_expected_std_cols if c in data.columns]
-            data = data[list(set(cols_to_keep_final))]
+            all_expected_std_cols = list(set(core_cols_std + margin_cols_std + optional_cols_std + year_data_cols_found_list))
+            cols_to_keep_final_list = [c for c in all_expected_std_cols if c in data.columns] # Renamed
+            data = data[cols_to_keep_final_list]
 
-            final_rename_map = {
-                'project_name': 'project name', 'project_type': 'project type', 'priority': 'priority',
-                'description': 'Description', 'project_link': 'Project Link',
-                'base_price': 'base price', 'threshold_price': 'threshold price',
-                'margin_share': 'margin share', 'fixed_purchase_price': 'fixed purchase price',
-                'percental_margin_share': 'percental margin share'
-            }
-            for yr_col_std in year_data_cols_found: final_rename_map[yr_col_std] = yr_col_std.replace('_', ' ')
+            final_rename_map_dict = {'project_name': 'project name', 'project_type': 'project type', 'priority': 'priority', 'description': 'Description', 'project_link': 'Project Link', 'base_price': 'base price', 'threshold_price': 'threshold price', 'margin_share': 'margin share', 'fixed_purchase_price': 'fixed purchase price', 'percental_margin_share': 'percental margin share'} # Renamed
+            for yr_col_map in year_data_cols_found_list: final_rename_map_dict[yr_col_map] = yr_col_map.replace('_', ' ') # Renamed
             
-            rename_map_for_df_final = {k_std: v_disp for k_std, v_disp in final_rename_map.items() if k_std in data.columns}
-            data.rename(columns=rename_map_for_df_final, inplace=True)
+            actual_rename_map = {k: v for k, v in final_rename_map_dict.items() if k in data.columns} # Renamed
+            data.rename(columns=actual_rename_map, inplace=True)
 
-            project_names_list = []
-            if 'project name' in data.columns: project_names_list = sorted(data['project name'].unique().tolist())
-            
-            return data, None, available_years, project_names_list, invalid_types_found
+            project_names_output = sorted(data['project name'].unique().tolist()) if 'project name' in data.columns else [] # Renamed
+            return data, None, available_years_list, project_names_output, invalid_types_list
 
         try:
-            data, error_msg, available_years_in_data, project_names_list, invalid_types_found = load_and_prepare_data(df_upload)
-            if invalid_types_found: st.sidebar.warning(f"Ignored rows with invalid project types: {', '.join(invalid_types_found)}. Valid: 'reduction', 'technical removal', 'natural removal'.")
-            if error_msg:
-                st.sidebar.error(error_msg); st.session_state.data_loaded_successfully = False; st.session_state.working_data_full = None
-                st.session_state.project_names = []; st.session_state.available_years_in_data = []; st.session_state.selected_projects = []; st.session_state.annual_targets = {}
+            data_main, error_msg_main, available_years_data_main, project_names_main, invalid_types_main = load_and_prepare_data(df_upload) # Renamed
+            if invalid_types_main: st.sidebar.warning(f"Ignored invalid project types: {', '.join(invalid_types_main)}. Valid: 'reduction', 'technical removal', 'natural removal'.")
+            if error_msg_main:
+                st.sidebar.error(error_msg_main); st.session_state.update({'data_loaded_successfully': False, 'working_data_full': None, 'project_names': [], 'available_years_in_data': [], 'selected_projects': [], 'annual_targets': {}})
             else:
-                st.session_state.project_names = project_names_list; st.session_state.available_years_in_data = available_years_in_data
-                st.session_state.working_data_full = data; st.session_state.data_loaded_successfully = True; st.sidebar.success("Data loaded successfully!")
-                current_selection = st.session_state.get('selected_projects', []); valid_current_selection = [p for p in current_selection if p in project_names_list]
-                st.session_state.selected_projects = valid_current_selection if valid_current_selection or not project_names_list else project_names_list
-                st.session_state.annual_targets = {}
-        except Exception as e_load:
-            st.sidebar.error(f"Unexpected error during file processing: {e_load}"); st.sidebar.error(f"Traceback: {traceback.format_exc()}")
-            st.session_state.data_loaded_successfully = False; st.session_state.working_data_full = None; st.session_state.project_names = []; st.session_state.available_years_in_data = []; st.session_state.selected_projects = []; st.session_state.annual_targets = {}
+                st.session_state.update({'project_names': project_names_main, 'available_years_in_data': available_years_data_main, 'working_data_full': data_main, 'data_loaded_successfully': True, 'annual_targets': {}})
+                st.sidebar.success("Data loaded successfully!")
+                curr_sel = st.session_state.get('selected_projects', []) # Renamed
+                valid_sel = [p for p in curr_sel if p in project_names_main] # Renamed
+                st.session_state.selected_projects = valid_sel if valid_sel or not project_names_main else project_names_main
+        except Exception as e_load_main: # Renamed
+            st.sidebar.error(f"Unexpected error processing file: {e_load_main}"); st.sidebar.error(f"Traceback: {traceback.format_exc()}")
+            st.session_state.update({'data_loaded_successfully': False, 'working_data_full': None, 'project_names': [], 'available_years_in_data': [], 'selected_projects': [], 'annual_targets': {}})
 
     if st.session_state.get('data_loaded_successfully', False):
-        data_for_ui = st.session_state.working_data_full
-        available_years_in_data_sb = st.session_state.available_years_in_data # Renamed
-        project_names_list_sb = st.session_state.project_names # Renamed
+        # Sidebar settings (using st.session_state values)
+        # ... (This section remains largely the same as your last full version, ensure variable names are consistent) ...
+        # Make sure to use st.session_state.working_data_full, st.session_state.available_years_in_data etc.
+        # For brevity, I'm assuming this part is correct from your prior version.
+        # Example for "Years to Plan" (ensure data_for_ui_sb, available_years_in_data_sb are correctly sourced from session_state)
+        data_for_ui_sb = st.session_state.working_data_full
+        available_years_in_data_sb = st.session_state.available_years_in_data
+        project_names_list_sb_display = st.session_state.project_names
+
 
         if not available_years_in_data_sb:
-            st.sidebar.warning("No usable year data (price_YYYY/volume_YYYY columns) found. Settings disabled.")
+            st.sidebar.warning("No usable year data found. Settings disabled.")
         else:
             st.markdown("## 2. Portfolio Settings")
-            min_year_data = min(available_years_in_data_sb); max_year_data = max(available_years_in_data_sb)
-            max_possible_years_to_plan = max(1, max_year_data - min_year_data + 1)
-            try: current_years_to_plan_val = int(st.session_state.get('years_slider_sidebar', 5))
-            except: current_years_to_plan_val = 5
-            current_years_to_plan_val = max(1, min(current_years_to_plan_val, max_possible_years_to_plan))
+            min_yr_sb, max_yr_sb = min(available_years_in_data_sb), max(available_years_in_data_sb) # Renamed
+            max_yrs_plan_sb = max(1, max_yr_sb - min_yr_sb + 1) # Renamed
+            curr_yrs_plan_val_sb = st.session_state.get('years_slider_sidebar', 5) # Renamed
+            try: curr_yrs_plan_val_sb = int(curr_yrs_plan_val_sb)
+            except: curr_yrs_plan_val_sb = 5
+            curr_yrs_plan_val_sb = max(1, min(curr_yrs_plan_val_sb, max_yrs_plan_sb))
 
-            years_to_plan = st.number_input(
-                label=f"Years to Plan (Starting {min_year_data})", min_value=1, max_value=max_possible_years_to_plan,
-                value=current_years_to_plan_val, step=1, key='years_slider_sidebar_widget',
-                help=f"Enter # years for planning, 1 to {max_possible_years_to_plan}."
-            )
-            st.session_state.years_slider_sidebar = years_to_plan
+            yrs_to_plan_sb = st.number_input(f"Years to Plan (Starting {min_yr_sb})", 1, max_yrs_plan_sb, curr_yrs_plan_val_sb, 1, key='years_slider_sidebar_widget', help=f"Enter # years (1 to {max_yrs_plan_sb}).") # Renamed
+            st.session_state.years_slider_sidebar = yrs_to_plan_sb
 
-            start_year_selected = min_year_data; end_year_selected = start_year_selected + years_to_plan - 1
-            selected_years_range = list(range(start_year_selected, end_year_selected + 1))
-            actual_years_present_in_data = [yr for yr in selected_years_range if f"price {yr}" in data_for_ui.columns and f"available volume {yr}" in data_for_ui.columns]
-            st.session_state.selected_years = actual_years_present_in_data
+            start_yr_sel_sb, end_yr_sel_sb = min_yr_sb, min_yr_sb + yrs_to_plan_sb - 1 # Renamed
+            sel_yrs_range_sb = list(range(start_yr_sel_sb, end_yr_sel_sb + 1)) # Renamed
+            actual_yrs_data_sb = [yr for yr in sel_yrs_range_sb if f"price {yr}" in data_for_ui_sb.columns and f"available volume {yr}" in data_for_ui_sb.columns] # Renamed
+            st.session_state.selected_years = actual_yrs_data_sb
 
-            if not st.session_state.selected_years:
-                st.sidebar.error(f"No data for period ({start_year_selected}-{end_year_selected}). Adjust 'Years to Plan'.")
-                st.session_state.actual_start_year = None; st.session_state.actual_end_year = None
+            if not actual_yrs_data_sb:
+                st.sidebar.error(f"No data for period ({start_yr_sel_sb}-{end_yr_sel_sb}). Adjust 'Years to Plan'.")
+                st.session_state.actual_start_year, st.session_state.actual_end_year = None, None
             else:
-                st.session_state.actual_start_year = min(st.session_state.selected_years)
-                st.session_state.actual_end_year = max(st.session_state.selected_years)
+                st.session_state.actual_start_year, st.session_state.actual_end_year = min(actual_yrs_data_sb), max(actual_yrs_data_sb)
                 st.sidebar.markdown(f"Planning Horizon: **{st.session_state.actual_start_year} - {st.session_state.actual_end_year}**")
                 st.session_state.constraint_type = st.radio("Constraint Type:", ('Volume', 'Budget'), index=['Volume', 'Budget'].index(st.session_state.get('constraint_type', 'Volume')), key='constraint_type_sidebar_widget', horizontal=True)
-                constraint_type_sb = st.session_state.constraint_type # Renamed
-
-                st.markdown("### Annual Target Settings")
-                master_target_value = st.session_state.get('master_target')
-                default_target_val = 1000 if constraint_type_sb == 'Volume' else 100000.0 # Renamed default_target
-                if master_target_value is not None:
-                    try: default_target_val = float(master_target_value) if constraint_type_sb == 'Budget' else int(float(master_target_value))
-                    except: pass # Keep initial default if conversion fails
                 
-                num_input_kwargs = {"min_value": 0.0 if constraint_type_sb == 'Budget' else 0,
-                                    "step": 1000.0 if constraint_type_sb == 'Budget' else 100,
-                                    "value": default_target_val,
-                                    "key": f'master_{constraint_type_sb.lower()}_sidebar',
-                                    "help": "Set default annual target. Override specific years below."}
-                if constraint_type_sb == 'Budget': num_input_kwargs["format"] = "%.2f"
-                default_target_input = st.number_input(f"Default Annual Target ({'€' if constraint_type_sb == 'Budget' else 't'}):", **num_input_kwargs)
-                st.session_state.master_target = default_target_input
+                # Annual Target Settings
+                st.markdown("### Annual Target Settings")
+                master_target_sb = st.session_state.get('master_target') # Renamed
+                is_budget_sb = st.session_state.constraint_type == 'Budget' # Renamed
+                default_master_val_sb = 100000.0 if is_budget_sb else 1000 # Renamed
+                if master_target_sb is not None:
+                    try: default_master_val_sb = float(master_target_sb) if is_budget_sb else int(float(master_target_sb))
+                    except: pass 
+                
+                num_args_master_sb = {"min_value": 0.0 if is_budget_sb else 0, "step": 1000.0 if is_budget_sb else 100, "value": default_master_val_sb, "key": f'master_{st.session_state.constraint_type.lower()}_sidebar', "help": "Set default. Override below."} # Renamed
+                if is_budget_sb: num_args_master_sb["format"] = "%.2f"
+                st.session_state.master_target = st.number_input(f"Default Annual Target ({'€' if is_budget_sb else 't'}):", **num_args_master_sb)
 
                 with st.expander("Customize Annual Targets (+/-)", expanded=False):
-                    current_annual_targets = st.session_state.get('annual_targets', {})
-                    updated_targets_from_inputs = {}
-                    if not st.session_state.selected_years: st.caption("Select years via 'Years to Plan'.")
+                    curr_annual_targets_sb = st.session_state.get('annual_targets', {}) # Renamed
+                    updated_annual_targets_sb = {} # Renamed
+                    if not actual_yrs_data_sb: st.caption("Select years first.")
                     else:
-                        for year_input_sb in st.session_state.selected_years: # Renamed
-                            year_target_val = current_annual_targets.get(year_input_sb, default_target_input)
-                            input_key = f"target_{year_input_sb}_{constraint_type_sb}"
-                            label = f"Target {year_input_sb} ({'€' if constraint_type_sb == 'Budget' else 't'})"
-                            num_input_kwargs_yr = {"min_value": 0.0 if constraint_type_sb == 'Budget' else 0,
-                                                "step": 1000.0 if constraint_type_sb == 'Budget' else 100,
-                                                "key": input_key}
-                            try: num_input_kwargs_yr["value"] = float(year_target_val) if constraint_type_sb == 'Budget' else int(float(year_target_val))
-                            except: num_input_kwargs_yr["value"] = float(default_target_input) if constraint_type_sb == 'Budget' else int(default_target_input)
-                            if constraint_type_sb == 'Budget': num_input_kwargs_yr["format"] = "%.2f"
-                            updated_targets_from_inputs[year_input_sb] = st.number_input(label, **num_input_kwargs_yr)
-                    st.session_state.annual_targets = updated_targets_from_inputs
+                        for yr_target_sb in actual_yrs_data_sb: # Renamed
+                            yr_target_val_sb = curr_annual_targets_sb.get(yr_target_sb, st.session_state.master_target) # Renamed
+                            key_sb = f"target_{yr_target_sb}_{st.session_state.constraint_type}" # Renamed
+                            label_sb = f"Target {yr_target_sb} ({'€' if is_budget_sb else 't'})" # Renamed
+                            num_args_yr_sb = {"min_value": 0.0 if is_budget_sb else 0, "step": 1000.0 if is_budget_sb else 100, "key": key_sb} # Renamed
+                            try: num_args_yr_sb["value"] = float(yr_target_val_sb) if is_budget_sb else int(float(yr_target_val_sb))
+                            except: num_args_yr_sb["value"] = float(st.session_state.master_target) if is_budget_sb else int(st.session_state.master_target)
+                            if is_budget_sb: num_args_yr_sb["format"] = "%.2f"
+                            updated_annual_targets_sb[yr_target_sb] = st.number_input(label_sb, **num_args_yr_sb)
+                    st.session_state.annual_targets = updated_annual_targets_sb
                 
+                # Allocation Goal & Preferences
                 st.sidebar.markdown("### Allocation Goal & Preferences")
                 st.session_state.min_fulfillment_perc = st.sidebar.slider(f"Min. Target Fulfillment (%)", 50, 100, st.session_state.get('min_fulfillment_perc', 95), key='min_fulfill_perc_sidebar')
                 st.session_state.min_alloc_chunk = int(st.sidebar.number_input("Min. Allocation Unit (t)", 1, step=1, value=st.session_state.get('min_alloc_chunk', 1), key='min_alloc_chunk_sidebar') or 1)
 
+                # Removal Volume Transition
                 st.sidebar.markdown("### Removal Volume Transition (If 'Reduction' Projects Used)")
-                reduction_present = 'reduction' in data_for_ui['project type'].unique() if 'project type' in data_for_ui else False
-                st.sidebar.info("Transition settings apply if 'Reduction' projects are selected." if reduction_present else "Transition inactive: No 'Reduction' projects.")
-                removal_help_end_year = st.session_state.actual_end_year if st.session_state.actual_end_year else "end year"
-                try: rem_target_default = int(float(st.session_state.get('removal_target_end_year', 0.8)) * 100)
-                except: rem_target_default = 80
-                st.session_state.removal_target_end_year = st.sidebar.slider(f"Target Removal Vol % ({removal_help_end_year})", 0, 100, rem_target_default, key='removal_perc_slider_sidebar', disabled=not reduction_present) / 100.0
-                st.session_state.transition_speed = st.sidebar.slider("Transition Speed", 1, 10, st.session_state.get('transition_speed', 5), key='transition_speed_slider_sidebar', disabled=not reduction_present)
+                reduc_present_sb = 'reduction' in data_for_ui_sb['project type'].unique() if 'project type' in data_for_ui_sb else False # Renamed
+                st.sidebar.info("Applies if 'Reduction' projects selected." if reduc_present_sb else "Inactive: No 'Reduction' projects.")
+                end_yr_help_sb = st.session_state.actual_end_year or "end year" # Renamed
+                try: rem_target_default_sb = int(float(st.session_state.get('removal_target_end_year', 0.8)) * 100) # Renamed
+                except: rem_target_default_sb = 80
+                st.session_state.removal_target_end_year = st.sidebar.slider(f"Target Removal Vol % ({end_yr_help_sb})", 0, 100, rem_target_default_sb, key='removal_perc_slider_sidebar', disabled=not reduc_present_sb) / 100.0
+                st.session_state.transition_speed = st.sidebar.slider("Transition Speed", 1, 10, st.session_state.get('transition_speed', 5), key='transition_speed_slider_sidebar', disabled=not reduc_present_sb)
                 
+                # Removal Category Preference
                 st.sidebar.markdown("### Removal Category Preference")
-                removal_types_present = any(pt in data_for_ui['project type'].unique() for pt in ['technical removal', 'natural removal']) if 'project type' in data_for_ui else False
-                rem_pref_val = st.sidebar.slider("Technical vs Natural Preference", 1, 10, st.session_state.get('removal_preference_slider', 5), format="%d", key='removal_pref_slider_sidebar', disabled=not removal_types_present)
-                st.session_state['removal_preference_slider'] = rem_pref_val; tech_pref_ratio = (rem_pref_val - 1) / 9.0
-                st.session_state.category_split = {'technical removal': tech_pref_ratio, 'natural removal': 1.0 - tech_pref_ratio}
+                rem_types_present_sb = any(pt in data_for_ui_sb['project type'].unique() for pt in ['technical removal', 'natural removal']) if 'project type' in data_for_ui_sb else False # Renamed
+                rem_pref_val_sb = st.sidebar.slider("Technical vs Natural Preference", 1, 10, st.session_state.get('removal_preference_slider', 5), format="%d", key='removal_pref_slider_sidebar', disabled=not rem_types_present_sb) # Renamed
+                st.session_state['removal_preference_slider'] = rem_pref_val_sb; tech_pref_ratio_sb = (rem_pref_val_sb - 1) / 9.0 # Renamed
+                st.session_state.category_split = {'technical removal': tech_pref_ratio_sb, 'natural removal': 1.0 - tech_pref_ratio_sb}
                 
+                # Select Projects
                 st.sidebar.markdown("## 3. Select Projects")
-                if not project_names_list_sb: st.sidebar.warning("No projects available.")
+                if not project_names_list_sb_display: st.sidebar.warning("No projects available.")
                 else:
-                    st.session_state.selected_projects = st.sidebar.multiselect("Select projects to include:", options=project_names_list_sb, default=st.session_state.get('selected_projects', project_names_list_sb), key='project_selector_sidebar')
-                    if 'priority' in data_for_ui.columns: # Check on display name
-                        boost_options = [p for p in project_names_list_sb if p in st.session_state.selected_projects]
-                        if boost_options:
-                            fav_default = [f for f in st.session_state.get('favorite_projects_selection', []) if f in boost_options][:1]
-                            st.session_state.favorite_projects_selection = st.sidebar.multiselect("Favorite Project (Priority Boost):", options=boost_options, default=fav_default, key='favorite_selector_sidebar', max_selections=1)
-                        else: st.session_state.favorite_projects_selection = [] # Clear if no options
+                    st.session_state.selected_projects = st.sidebar.multiselect("Select projects to include:", options=project_names_list_sb_display, default=st.session_state.get('selected_projects', project_names_list_sb_display), key='project_selector_sidebar')
+                    if 'priority' in data_for_ui_sb.columns:
+                        boost_opts_sb = [p for p in project_names_list_sb_display if p in st.session_state.selected_projects] # Renamed
+                        if boost_opts_sb:
+                            fav_default_sb = [f for f in st.session_state.get('favorite_projects_selection', []) if f in boost_opts_sb][:1] # Renamed
+                            st.session_state.favorite_projects_selection = st.sidebar.multiselect("Favorite Project (Priority Boost):", options=boost_opts_sb, default=fav_default_sb, key='favorite_selector_sidebar', max_selections=1)
+                        else: st.session_state.favorite_projects_selection = []
                     else: st.session_state.favorite_projects_selection = []
+
 # ==================================
 # Main Page Content
 # ==================================
@@ -649,206 +557,203 @@ st.markdown("---")
 
 if not st.session_state.get('data_loaded_successfully', False):
     st.info("👋 Welcome! Please upload your project data CSV using the sidebar menu to get started.")
-elif st.session_state.get('data_loaded_successfully', False):
+elif st.session_state.get('data_loaded_successfully', False): # This elif is for the project offerings expander
     st.markdown("## Project Offerings")
     st.caption("To get more information on the specific project please unfold the list and click the link to the project slide.")
-    project_df_display = st.session_state.working_data_full.copy()
-    # Calculate Average Price for Display (using display names)
-    avg_price_cols = [f"price {yr}" for yr in st.session_state.available_years_in_data if f"price {yr}" in project_df_display.columns]
-    project_df_display['Average Price'] = project_df_display[avg_price_cols].mean(axis=1, skipna=True).fillna(0.0) if avg_price_cols else 0.0
+    project_df_disp = st.session_state.working_data_full.copy() # Renamed
+    avg_price_cols_disp = [f"price {yr}" for yr in st.session_state.available_years_in_data if f"price {yr}" in project_df_disp.columns] # Renamed
+    project_df_disp['Average Price'] = project_df_disp[avg_price_cols_disp].mean(axis=1, skipna=True).fillna(0.0) if avg_price_cols_disp else 0.0
 
     with st.expander("View Project Details"):
-        if not project_df_display.empty:
-            cols_for_proj_details = ['project name', 'project type', 'Average Price']
-            if 'Project Link' in project_df_display.columns: cols_for_proj_details.append('Project Link')
-            col_config_proj_details = {"Average Price": st.column_config.NumberColumn("Avg Price (€/t)", format="€%.2f")}
-            if 'Project Link' in project_df_display.columns: col_config_proj_details["Project Link"] = st.column_config.LinkColumn("Project Link", display_text="Visit ->")
-            st.dataframe(project_df_display[cols_for_proj_details], column_config=col_config_proj_details, hide_index=True, use_container_width=True)
+        if not project_df_disp.empty:
+            cols_proj_disp = ['project name', 'project type', 'Average Price'] # Renamed
+            if 'Project Link' in project_df_disp.columns: cols_proj_disp.append('Project Link')
+            col_config_disp = {"Average Price": st.column_config.NumberColumn("Avg Price (€/t)", format="€%.2f")} # Renamed
+            if 'Project Link' in project_df_disp.columns: col_config_disp["Project Link"] = st.column_config.LinkColumn("Project Link", display_text="Visit ->")
+            st.dataframe(project_df_disp[cols_proj_disp], column_config=col_config_disp, hide_index=True, use_container_width=True)
         else: st.write("No project data to display.")
     st.markdown("---")
 
+# Main calculation/display logic (this block should also be guarded by data_loaded_successfully but is separate from above elif)
 if st.session_state.get('data_loaded_successfully', False):
     if not st.session_state.get('selected_projects'): st.warning("⚠️ Please select projects in the sidebar (Section 3).")
     elif not st.session_state.get('selected_years'): st.warning("⚠️ No valid years for planning. Adjust 'Years to Plan' (Section 2).")
     else:
-        # Check all required keys for allocation are present and properly initialized
-        required_keys_main = ['working_data_full', 'selected_projects', 'selected_years', 'actual_start_year', 'actual_end_year', 'constraint_type', 'annual_targets', 'removal_target_end_year', 'transition_speed', 'category_split', 'favorite_projects_selection', 'min_fulfillment_perc', 'min_alloc_chunk']
-        keys_present_main = all(k in st.session_state for k in required_keys_main) and \
+        required_keys_main_logic = ['working_data_full', 'selected_projects', 'selected_years', 'actual_start_year', 'actual_end_year', 'constraint_type', 'annual_targets', 'removal_target_end_year', 'transition_speed', 'category_split', 'favorite_projects_selection', 'min_fulfillment_perc', 'min_alloc_chunk'] # Renamed
+        keys_ok_main_logic = all(k in st.session_state for k in required_keys_main_logic) and \
                             all(st.session_state.get(k) is not None for k in ['working_data_full', 'selected_projects', 'selected_years', 'actual_start_year', 'actual_end_year', 'constraint_type', 'removal_target_end_year', 'transition_speed', 'category_split', 'min_fulfillment_perc', 'min_alloc_chunk']) and \
                             isinstance(st.session_state.get('annual_targets', {}), dict) and \
-                            isinstance(st.session_state.get('favorite_projects_selection', []), list)
+                            isinstance(st.session_state.get('favorite_projects_selection', []), list) # Renamed
 
-
-        if keys_present_main:
+        if keys_ok_main_logic:
             try:
-                fav_proj_main = st.session_state.favorite_projects_selection[0] if st.session_state.favorite_projects_selection else None
-                annual_targets_main = st.session_state.annual_targets
-                if not annual_targets_main and st.session_state.selected_years:
+                fav_proj_run = st.session_state.favorite_projects_selection[0] if st.session_state.favorite_projects_selection else None # Renamed
+                annual_targets_run = st.session_state.annual_targets # Renamed
+                if not annual_targets_run and st.session_state.selected_years:
                     st.warning("Annual targets not set. Using 0 for all years. Configure in Sidebar > Annual Target Settings.")
-                    annual_targets_main = {yr: 0 for yr in st.session_state.selected_years}
+                    annual_targets_run = {yr: 0 for yr in st.session_state.selected_years}
 
-                if st.session_state.constraint_type == 'Budget': st.info(f"**Budget Mode:** Projects receive budget based on weighted priority & price. May get 0 volume if budget is less than cost of {st.session_state.min_alloc_chunk}t. Adjustment step may add volume later.")
+                if st.session_state.constraint_type == 'Budget': st.info(f"**Budget Mode:** Projects get budget via weighted priority & price. May get 0 vol if budget < cost of {st.session_state.min_alloc_chunk}t. Adjustment may add later.")
                 st.success(f"**Allocation Goal:** Attempting ≥ **{st.session_state.min_fulfillment_perc}%** of annual target {st.session_state.constraint_type}.")
                 
-                with st.spinner("Calculating portfolio allocation... Please wait."):
-                    results_main, summary_df_main = allocate_portfolio(
+                with st.spinner("Calculating portfolio allocation..."):
+                    results_run, summary_df_run = allocate_portfolio( # Renamed
                         project_data=st.session_state.working_data_full, selected_project_names=st.session_state.selected_projects,
                         selected_years=st.session_state.selected_years, start_year_portfolio=st.session_state.actual_start_year,
                         end_year_portfolio=st.session_state.actual_end_year, constraint_type=st.session_state.constraint_type,
-                        annual_targets=annual_targets_main, removal_target_percent_end_year=st.session_state.removal_target_end_year,
+                        annual_targets=annual_targets_run, removal_target_percent_end_year=st.session_state.removal_target_end_year,
                         transition_speed=st.session_state.transition_speed, category_split=st.session_state.category_split,
-                        favorite_project=fav_proj_main, min_target_fulfillment_percent=st.session_state.min_fulfillment_perc / 100.0,
+                        favorite_project=fav_proj_run, min_target_fulfillment_percent=st.session_state.min_fulfillment_perc / 100.0,
                         min_allocation_chunk=st.session_state.min_alloc_chunk)
                 
-                details_list_main = []
-                if results_main:
-                    for year_res_main, projects_res_main in results_main.items():
-                        if projects_res_main:
-                            for proj_res_main in projects_res_main:
-                                if isinstance(proj_res_main, dict) and (proj_res_main.get('allocated_volume', 0) >= st.session_state.min_alloc_chunk or proj_res_main.get('allocated_cost', 0) > 1e-6):
-                                    details_list_main.append({'year': year_res_main, 'project name': proj_res_main.get('project name'), 'type': proj_res_main.get('type'), 'volume': proj_res_main.get('allocated_volume', 0), 'price': proj_res_main.get('price_used', None), 'cost': proj_res_main.get('allocated_cost', 0.0)})
+                details_list_run = [] # Renamed
+                if results_run:
+                    for yr_res_run, projs_res_run in results_run.items(): # Renamed
+                        if projs_res_run:
+                            for proj_detail_run in projs_res_run: # Renamed
+                                if isinstance(proj_detail_run, dict) and (proj_detail_run.get('allocated_volume', 0) >= st.session_state.min_alloc_chunk or proj_detail_run.get('allocated_cost', 0) > 1e-6):
+                                    details_list_run.append({'year': yr_res_run, 'project name': proj_detail_run.get('project name'), 'type': proj_detail_run.get('type'), 'volume': proj_detail_run.get('allocated_volume', 0), 'price': proj_detail_run.get('price_used', None), 'cost': proj_detail_run.get('allocated_cost', 0.0)})
                 
-                details_df_main = pd.DataFrame(details_list_main)
-                total_portfolio_margin_main = 0.0 # Initialize
-                if not details_df_main.empty:
-                    details_df_with_margins_main = add_margins_to_details_df(details_df_main.copy(), st.session_state.working_data_full)
-                    total_portfolio_margin_main = details_df_with_margins_main['margin'].sum()
-                    if not summary_df_main.empty:
-                        yearly_margins_main = details_df_with_margins_main.groupby('year')['margin'].sum().reset_index().rename(columns={'margin': 'Total Yearly Margin', 'year': 'Year'})
-                        summary_df_main = pd.merge(summary_df_main, yearly_margins_main, on='Year', how='left').fillna({'Total Yearly Margin': 0.0})
-                else:
-                    details_df_with_margins_main = details_df_main.copy(); details_df_with_margins_main['margin'] = 0.0 # Ensure column exists
-                    if not summary_df_main.empty: summary_df_main['Total Yearly Margin'] = 0.0
+                details_df_run = pd.DataFrame(details_list_run) # Renamed
+                total_portfolio_margin_run = 0.0 # Renamed
 
+                # --- REVISED LOGIC for adding 'Total Yearly Margin' to summary_df_run (from previous fix) ---
+                if not details_df_run.empty:
+                    details_df_with_margins_run = add_margins_to_details_df(details_df_run.copy(), st.session_state.working_data_full) # Renamed
+                    total_portfolio_margin_run = details_df_with_margins_run['margin'].sum()
+                    if not summary_df_run.empty:
+                        actual_yearly_margins_series_run = details_df_with_margins_run.groupby('year')['margin'].sum() # Renamed
+                        summary_df_run['Total Yearly Margin'] = summary_df_run['Year'].map(actual_yearly_margins_series_run).fillna(0.0)
+                else: 
+                    details_df_with_margins_run = details_df_run.copy(); details_df_with_margins_run['margin'] = 0.0
+                    total_portfolio_margin_run = 0.0
+                    if not summary_df_run.empty:
+                        summary_df_run['Total Yearly Margin'] = summary_df_run.get('Total Yearly Margin', pd.Series(0.0, index=summary_df_run.index)).fillna(0.0)
+                # --- END OF REVISED LOGIC ---
 
-                st.markdown("## Portfolio Summary"); col_l_main, col_m_main, col_r_main = st.columns([1.5, 1.5, 1.2], gap="large")
-                with col_l_main:
+                st.markdown("## Portfolio Summary"); colL, colM, colR = st.columns([1.5, 1.5, 1.2], gap="large") # Renamed
+                with colL:
                     st.markdown("#### Key Metrics (Overall)")
-                    total_cost_all_years, total_volume_all_years, overall_avg_price_main = 0.0, 0, 0.0 # Initialize
-                    if not summary_df_main.empty:
-                        total_cost_all_years = summary_df_main['Allocated Cost'].sum(); total_volume_all_years = summary_df_main['Allocated Volume'].sum()
-                        overall_avg_price_main = total_cost_all_years / total_volume_all_years if total_volume_all_years > 0 else 0.0
-                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Cost</b> € {total_cost_all_years:,.2f}</div>""", unsafe_allow_html=True)
-                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Volume</b> {total_volume_all_years:,.0f} t</div>""", unsafe_allow_html=True)
-                with col_m_main:
+                    tot_cost, tot_vol, avg_price_overall = 0.0, 0, 0.0 # Renamed
+                    if not summary_df_run.empty:
+                        tot_cost = summary_df_run['Allocated Cost'].sum(); tot_vol = summary_df_run['Allocated Volume'].sum()
+                        avg_price_overall = tot_cost / tot_vol if tot_vol > 0 else 0.0
+                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Cost</b> € {tot_cost:,.2f}</div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Volume</b> {tot_vol:,.0f} t</div>""", unsafe_allow_html=True)
+                with colM:
                     st.markdown("#### &nbsp;")
-                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Margin</b> € {total_portfolio_margin_main:,.2f}</div>""", unsafe_allow_html=True)
-                    st.markdown(f"""<div class="metric-box"><b>Overall Average Price</b> € {overall_avg_price_main:,.2f} /t</div>""", unsafe_allow_html=True)
-                with col_r_main:
+                    st.markdown(f"""<div class="metric-box"><b>Total Portfolio Margin</b> € {total_portfolio_margin_run:,.2f}</div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div class="metric-box"><b>Overall Average Price</b> € {avg_price_overall:,.2f} /t</div>""", unsafe_allow_html=True)
+                with colR:
                     st.markdown("#### Volume by Project Type")
-                    if not details_df_with_margins_main.empty and details_df_with_margins_main['volume'].sum() > 1e-6:
-                        pie_data_main = details_df_with_margins_main.groupby('type')['volume'].sum().reset_index()
-                        pie_data_main = pie_data_main[pie_data_main['volume'] > 1e-6]
-                        if not pie_data_main.empty:
-                            fig_pie_main = px.pie(pie_data_main, values='volume', names='type', color='type', color_discrete_map=type_color_map, height=350)
-                            fig_pie_main.update_layout(legend_title_text='Project Type', legend_orientation="h", legend_yanchor="bottom", legend_y=-0.2, legend_xanchor="center", legend_x=0.5, margin=dict(t=5, b=50, l=0, r=0))
-                            fig_pie_main.update_traces(textposition='inside', textinfo='percent', sort=False, hole=.3, marker=dict(line=dict(color='#FFFFFF', width=1)))
-                            st.plotly_chart(fig_pie_main, use_container_width=True)
+                    if not details_df_with_margins_run.empty and details_df_with_margins_run['volume'].sum() > 1e-6:
+                        pie_data_run = details_df_with_margins_run.groupby('type')['volume'].sum().reset_index() # Renamed
+                        pie_data_run = pie_data_run[pie_data_run['volume'] > 1e-6]
+                        if not pie_data_run.empty:
+                            fig_pie_run = px.pie(pie_data_run, values='volume', names='type', color='type', color_discrete_map=type_color_map, height=350) # Renamed
+                            fig_pie_run.update_layout(legend_title_text='Project Type', legend_orientation="h", legend_yanchor="bottom", legend_y=-0.2, legend_xanchor="center", legend_x=0.5, margin=dict(t=5, b=50, l=0, r=0))
+                            fig_pie_run.update_traces(textposition='inside', textinfo='percent', sort=False, hole=.3, marker_dict=dict(line=dict(color='#FFFFFF', width=1))) # Renamed marker to marker_dict
+                            st.plotly_chart(fig_pie_run, use_container_width=True)
                         else: st.caption("No significant volume for pie chart.")
                     else: st.caption("No allocation details for pie chart.")
                 
                 st.markdown("---")
-                if details_df_with_margins_main.empty: st.warning("No detailed project allocations to display further plots or tables.")
+                if details_df_with_margins_run.empty: st.warning("No detailed project allocations for plots/tables.")
                 else:
                     st.markdown("### Portfolio Composition & Price Over Time")
-                    details_df_with_margins_main['year'] = details_df_with_margins_main['year'].astype(int)
-                    summary_plot_data_main = details_df_with_margins_main.groupby(['year', 'type']).agg(volume=('volume', 'sum'), cost=('cost', 'sum'), margin=('margin', 'sum')).reset_index()
-                    price_summary_data_main = summary_df_main[['Year', 'Avg. Price']].rename(columns={'Year':'year', 'Avg. Price':'avg_price'}) if not summary_df_main.empty else pd.DataFrame(columns=['year', 'avg_price'])
+                    details_df_with_margins_run['year'] = details_df_with_margins_run['year'].astype(int)
+                    summary_plot_data_run = details_df_with_margins_run.groupby(['year', 'type']).agg(volume=('volume', 'sum'), cost=('cost', 'sum'), margin=('margin', 'sum')).reset_index() # Renamed
+                    price_summary_data_run = summary_df_run[['Year', 'Avg. Price']].rename(columns={'Year':'year', 'Avg. Price':'avg_price'}) if not summary_df_run.empty else pd.DataFrame(columns=['year', 'avg_price']) # Renamed
                     
-                    fig_comp_main = make_subplots(specs=[[{"secondary_y": True}]])
-                    y_metric_main = 'volume' if st.session_state.constraint_type == 'Volume' else 'cost'
-                    y_label_main = f"Allocated {y_metric_main.capitalize()} ({'t' if y_metric_main == 'volume' else '€'})"
-                    y_hover_main = f"{y_metric_main.capitalize()}: %{{y:{'{:,.0f}' if y_metric_main == 'volume' else '€{:,.2f}'}}}<extra></extra>"
+                    fig_comp_run = make_subplots(specs=[[{"secondary_y": True}]]) # Renamed
+                    y_metric_plot = 'volume' if st.session_state.constraint_type == 'Volume' else 'cost' # Renamed
+                    y_label_plot = f"Allocated {y_metric_plot.capitalize()} ({'t' if y_metric_plot == 'volume' else '€'})" # Renamed
+                    y_hover_plot = f"{y_metric_plot.capitalize()}: %{{y:{'{:,.0f}' if y_metric_plot == 'volume' else '€{:,.2f}'}}}<extra></extra>" # Renamed
 
-                    for t_name_main in ['reduction', 'natural removal', 'technical removal']:
-                        if t_name_main in summary_plot_data_main['type'].unique():
-                            df_type_main = summary_plot_data_main[summary_plot_data_main['type'] == t_name_main]
-                            if not df_type_main.empty and df_type_main[y_metric_main].sum() > 1e-6 :
-                                fig_comp_main.add_trace(go.Bar(x=df_type_main['year'], y=df_type_main[y_metric_main], name=t_name_main.replace('_', ' ').capitalize(), marker_color=type_color_map.get(t_name_main, default_color), hovertemplate=f'Year: %{{x}}<br>Type: {t_name_main.replace("_", " ").capitalize()}<br>{y_hover_main}'), secondary_y=False)
+                    for t_name_plot in ['reduction', 'natural removal', 'technical removal']: # Renamed
+                        if t_name_plot in summary_plot_data_run['type'].unique():
+                            df_type_plot = summary_plot_data_run[summary_plot_data_run['type'] == t_name_plot] # Renamed
+                            if not df_type_plot.empty and df_type_plot[y_metric_plot].sum() > 1e-6 :
+                                fig_comp_run.add_trace(go.Bar(x=df_type_plot['year'], y=df_type_plot[y_metric_plot], name=t_name_plot.replace('_', ' ').capitalize(), marker_color=type_color_map.get(t_name_plot, default_color), hovertemplate=f'Year: %{{x}}<br>Type: {t_name_plot.replace("_", " ").capitalize()}<br>{y_hover_plot}'), secondary_y=False)
                     
-                    if not price_summary_data_main.empty: fig_comp_main.add_trace(go.Scatter(x=price_summary_data_main['year'], y=price_summary_data_main['avg_price'], name='Avg Price (€/t)', mode='lines+markers', marker_symbol='circle', marker_size=8, line=dict(color='#1B5E20', width=3), hovertemplate='Year: %{x}<br>Avg Price: €%{y:,.2f}/t<extra></extra>'), secondary_y=True)
-                    if not summary_df_main.empty and 'Actual Removal Vol %' in summary_df_main.columns: fig_comp_main.add_trace(go.Scatter(x=summary_df_main['Year'], y=summary_df_main['Actual Removal Vol %'], name='Actual Removal Vol %', mode='lines+markers', line=dict(color='darkorange', dash='dash'), marker_symbol='star', marker_size=8, hovertemplate='Year: %{x}<br>Actual Removal: %{y:.1f}%<extra></extra>'), secondary_y=True)
+                    if not price_summary_data_run.empty: fig_comp_run.add_trace(go.Scatter(x=price_summary_data_run['year'], y=price_summary_data_run['avg_price'], name='Avg Price (€/t)', mode='lines+markers', marker_symbol='circle', marker_size=8, line_color='#1B5E20', line_width=3, hovertemplate='Year: %{x}<br>Avg Price: €%{y:,.2f}/t<extra></extra>'), secondary_y=True) # Added line_color, line_width
+                    if not summary_df_run.empty and 'Actual Removal Vol %' in summary_df_run.columns: fig_comp_run.add_trace(go.Scatter(x=summary_df_run['Year'], y=summary_df_run['Actual Removal Vol %'], name='Actual Removal Vol %', mode='lines+markers', line=dict(color='darkorange', dash='dash'), marker_symbol='star', marker_size=8, hovertemplate='Year: %{x}<br>Actual Removal: %{y:.1f}%<extra></extra>'), secondary_y=True)
                     
-                    y2_max_val_main = 105.0
-                    if not price_summary_data_main.empty and 'avg_price' in price_summary_data_main.columns and not price_summary_data_main['avg_price'].empty: y2_max_val_main = max(y2_max_val_main, price_summary_data_main['avg_price'].max() * 1.1 if pd.notna(price_summary_data_main['avg_price'].max()) else y2_max_val_main)
-                    if not summary_df_main.empty and 'Actual Removal Vol %' in summary_df_main.columns and not summary_df_main['Actual Removal Vol %'].empty: y2_max_val_main = max(y2_max_val_main, summary_df_main['Actual Removal Vol %'].max() * 1.1 if pd.notna(summary_df_main['Actual Removal Vol %'].max()) else y2_max_val_main)
+                    y2_max_plot = 105.0 # Renamed
+                    if not price_summary_data_run.empty and 'avg_price' in price_summary_data_run.columns and not price_summary_data_run['avg_price'].empty: y2_max_plot = max(y2_max_plot, price_summary_data_run['avg_price'].max() * 1.1 if pd.notna(price_summary_data_run['avg_price'].max()) else y2_max_plot)
+                    if not summary_df_run.empty and 'Actual Removal Vol %' in summary_df_run.columns and not summary_df_run['Actual Removal Vol %'].empty: y2_max_plot = max(y2_max_plot, summary_df_run['Actual Removal Vol %'].max() * 1.1 if pd.notna(summary_df_run['Actual Removal Vol %'].max()) else y2_max_plot)
                     
-                    fig_comp_main.update_layout(xaxis_title='Year', yaxis_title=y_label_main, yaxis2_title='Avg Price (€/t) / Actual Removal %', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), barmode='stack', template="plotly_white", margin=dict(t=20, l=0, r=0, b=0), yaxis_rangemode='tozero', yaxis2=dict(rangemode='tozero', range=[0, y2_max_val_main]), hovermode="x unified")
-                    if st.session_state.selected_years: fig_comp_main.update_xaxes(tickmode='array', tickvals=st.session_state.selected_years, dtick=1)
-                    st.plotly_chart(fig_comp_main, use_container_width=True)
+                    fig_comp_run.update_layout(xaxis_title='Year', yaxis_title=y_label_plot, yaxis2_title='Avg Price (€/t) / Rem. %', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), barmode='stack', template="plotly_white", margin_dict=dict(t=20, l=0, r=0, b=0), yaxis_rangemode='tozero', yaxis2=dict(rangemode='tozero', range=[0, y2_max_plot]), hovermode="x unified") # Renamed margin_dict
+                    if st.session_state.selected_years: fig_comp_run.update_xaxes(tickmode='array', tickvals=st.session_state.selected_years, dtick=1)
+                    st.plotly_chart(fig_comp_run, use_container_width=True)
 
                 st.markdown("### Detailed Allocation by Project and Year")
-                pivot_display_main = pd.DataFrame()
-                if not details_df_with_margins_main.empty:
+                pivot_display_run = pd.DataFrame() # Renamed
+                if not details_df_with_margins_run.empty:
                     try:
-                        details_df_with_margins_main['year'] = pd.to_numeric(details_df_with_margins_main['year'])
-                        pivot_intermediate_main = pd.pivot_table(details_df_with_margins_main, values=['volume', 'cost', 'price', 'margin'], index=['project name', 'type'], columns='year', aggfunc={'volume': 'sum', 'cost': 'sum', 'price': 'first', 'margin': 'sum'})
+                        details_df_with_margins_run['year'] = pd.to_numeric(details_df_with_margins_run['year'])
+                        pivot_intermediate_run = pd.pivot_table(details_df_with_margins_run, values=['volume', 'cost', 'price', 'margin'], index=['project name', 'type'], columns='year', aggfunc={'volume': 'sum', 'cost': 'sum', 'price': 'first', 'margin': 'sum'}) # Renamed
                         
-                        if not pivot_intermediate_main.empty:
-                            pivot_final_main = pivot_intermediate_main.swaplevel(0, 1, axis=1)
-                            metric_order_main = ['volume', 'cost', 'price', 'margin']
-                            years_in_pivot_cols_main = sorted([yr for yr in pivot_final_main.columns.get_level_values(0).unique() if isinstance(yr, (int, float, np.number))])
+                        if not pivot_intermediate_run.empty:
+                            pivot_final_run = pivot_intermediate_run.swaplevel(0, 1, axis=1) # Renamed
+                            metric_order_run = ['volume', 'cost', 'price', 'margin'] # Renamed
+                            yrs_pivot_run = sorted([yr for yr in pivot_final_run.columns.get_level_values(0).unique() if isinstance(yr, (int, float, np.number))]) # Renamed
                             
-                            if years_in_pivot_cols_main:
-                                final_multi_index_main = pd.MultiIndex.from_product([years_in_pivot_cols_main, metric_order_main], names=['year', 'metric'])
-                                pivot_final_main = pivot_final_main.reindex(columns=final_multi_index_main).sort_index(axis=1, level=[0, 1])
-                            pivot_final_main.index.names = ['Project Name', 'Type']
-                            pivot_display_main = pivot_final_main.copy()
+                            if yrs_pivot_run:
+                                final_multi_idx_run = pd.MultiIndex.from_product([yrs_pivot_run, metric_order_run], names=['year', 'metric']) # Renamed
+                                pivot_final_run = pivot_final_run.reindex(columns=final_multi_idx_run).sort_index(axis=1, level=[0, 1])
+                            pivot_final_run.index.names = ['Project Name', 'Type']
+                            pivot_display_run = pivot_final_run.copy()
 
-                        # Add Total Portfolio Row
-                        if not summary_df_main.empty and years_in_pivot_cols_main: # Ensure years_in_pivot_cols_main is defined
-                            total_data_dict_main = {}
-                            summary_indexed_main = summary_df_main.set_index('Year')
-                            for year_total_main in years_in_pivot_cols_main:
-                                if year_total_main in summary_indexed_main.index:
-                                    s_row = summary_indexed_main.loc[year_total_main]
-                                    total_data_dict_main[(year_total_main, 'volume')] = s_row['Allocated Volume']
-                                    total_data_dict_main[(year_total_main, 'cost')] = s_row['Allocated Cost']
-                                    total_data_dict_main[(year_total_main, 'price')] = s_row['Avg. Price']
-                                    total_data_dict_main[(year_total_main, 'margin')] = s_row['Total Yearly Margin']
-                            total_row_df_main = pd.DataFrame(total_data_dict_main, index=pd.MultiIndex.from_tuples([('Total Portfolio', 'All Types')], names=['Project Name', 'Type']))
-                            pivot_display_main = pd.concat([pivot_display_main, total_row_df_main]) if not pivot_display_main.empty else total_row_df_main
+                        if not summary_df_run.empty and yrs_pivot_run: # Check yrs_pivot_run exists
+                            total_data_dict_run = {} # Renamed
+                            summary_indexed_run = summary_df_run.set_index('Year') # Renamed
+                            for yr_total_run in yrs_pivot_run: # Renamed
+                                if yr_total_run in summary_indexed_run.index:
+                                    s_row_run = summary_indexed_run.loc[yr_total_run] # Renamed
+                                    total_data_dict_run[(yr_total_run, 'volume')] = s_row_run['Allocated Volume']
+                                    total_data_dict_run[(yr_total_run, 'cost')] = s_row_run['Allocated Cost']
+                                    total_data_dict_run[(yr_total_run, 'price')] = s_row_run['Avg. Price']
+                                    total_data_dict_run[(yr_total_run, 'margin')] = s_row_run['Total Yearly Margin'] # Should now exist
+                            total_row_df_run = pd.DataFrame(total_data_dict_run, index=pd.MultiIndex.from_tuples([('Total Portfolio', 'All Types')], names=['Project Name', 'Type'])) # Renamed
+                            pivot_display_run = pd.concat([pivot_display_run, total_row_df_run]) if not pivot_display_run.empty else total_row_df_run
                         
-                        if not pivot_display_main.empty:
-                            if any(col[1] == 'margin' for col in pivot_display_main.columns if isinstance(col, tuple)):
-                                pivot_display_main['Total Margin'] = pivot_display_main.xs('margin', axis=1, level='metric').sum(axis=1)
-                            else: pivot_display_main['Total Margin'] = 0.0
-                            pivot_display_main = pivot_display_main.fillna(0)
+                        if not pivot_display_run.empty:
+                            if any(col[1] == 'margin' for col in pivot_display_run.columns if isinstance(col, tuple)): pivot_display_run['Total Margin'] = pivot_display_run.xs('margin', axis=1, level='metric').sum(axis=1)
+                            else: pivot_display_run['Total Margin'] = 0.0
+                            pivot_display_run = pivot_display_run.fillna(0)
                             
-                            formatter_main = {}
-                            for col_tuple_main in pivot_display_main.columns:
-                                if isinstance(col_tuple_main, tuple) and len(col_tuple_main) == 2:
-                                    metric_val = col_tuple_main[1]
-                                    if metric_val == 'volume': formatter_main[col_tuple_main] = '{:,.0f} t'
-                                    elif metric_val == 'cost': formatter_main[col_tuple_main] = '€{:,.2f}'
-                                    elif metric_val == 'price': formatter_main[col_tuple_main] = lambda x_val: f'€{x_val:,.2f}/t' if pd.notna(x_val) and x_val != 0 else '-'
-                                    elif metric_val == 'margin': formatter_main[col_tuple_main] = '€{:,.2f}'
-                                elif col_tuple_main == 'Total Margin': formatter_main[col_tuple_main] = '€{:,.2f}'
-                            st.dataframe(pivot_display_main.style.format(formatter_main, na_rep="-"), use_container_width=True)
+                            formatter_run = {} # Renamed
+                            for col_tuple_fmt in pivot_display_run.columns: # Renamed
+                                if isinstance(col_tuple_fmt, tuple) and len(col_tuple_fmt) == 2:
+                                    metric_fmt = col_tuple_fmt[1]; yr_fmt = col_tuple_fmt[0] # Renamed
+                                    if metric_fmt == 'volume': formatter_run[col_tuple_fmt] = '{:,.0f} t'
+                                    elif metric_fmt == 'cost': formatter_run[col_tuple_fmt] = '€{:,.2f}'
+                                    elif metric_fmt == 'price': formatter_run[col_tuple_fmt] = lambda x_fmt: f'€{x_fmt:,.2f}/t' if pd.notna(x_fmt) and x_fmt != 0 else '-' # Renamed
+                                    elif metric_fmt == 'margin': formatter_run[col_tuple_fmt] = '€{:,.2f}'
+                                elif col_tuple_fmt == 'Total Margin': formatter_run[col_tuple_fmt] = '€{:,.2f}'
+                            st.dataframe(pivot_display_run.style.format(formatter_run, na_rep="-"), use_container_width=True)
                         else: st.info("No data for detailed allocation table.")
-                    except Exception as e_pivot: st.error(f"Could not create detailed allocation table: {e_pivot}"); st.error(f"Traceback: {traceback.format_exc()}")
-                else: st.info("No allocation details available to generate the detailed table.")
+                    except Exception as e_pivot_run: st.error(f"Could not create detailed table: {e_pivot_run}"); st.error(f"Traceback: {traceback.format_exc()}") # Renamed
+                else: st.info("No allocation details for detailed table.")
                 
-                if not pivot_display_main.empty:
-                    csv_df_main = pivot_display_main.copy()
-                    csv_df_main.columns = [f"{str(col[0])}_{col[1]}" if isinstance(col, tuple) else str(col) for col in csv_df_main.columns.values]
-                    csv_df_main = csv_df_main.reset_index()
+                if not pivot_display_run.empty:
+                    csv_df_export = pivot_display_run.copy() # Renamed
+                    csv_df_export.columns = [f"{str(col[0])}_{col[1]}" if isinstance(col, tuple) else str(col) for col in csv_df_export.columns.values]
+                    csv_df_export = csv_df_export.reset_index()
                     try:
-                        csv_string_main = csv_df_main.to_csv(index=False).encode('utf-8')
-                        st.markdown("---"); st.download_button(label="Download Detailed Allocation (CSV)", data=csv_string_main, file_name=f"portfolio_allocation_{datetime.date.today()}.csv", mime='text/csv', key='download-csv')
-                    except Exception as e_csv_main: st.error(f"Error generating CSV: {e_csv_main}")
+                        csv_str_export = csv_df_export.to_csv(index=False).encode('utf-8') # Renamed
+                        st.markdown("---"); st.download_button("Download Detailed Allocation (CSV)", csv_str_export, f"portfolio_allocation_{datetime.date.today()}.csv", 'text/csv', key='download-csv')
+                    except Exception as e_csv_export: st.error(f"Error generating CSV: {e_csv_export}") # Renamed
 
-            except ValueError as e_val_main: st.error(f"Config/Allocation Error: {e_val_main}")
-            except KeyError as e_key_main: st.error(f"Data Error (Missing Key): '{e_key_main}'. Check CSV & selections. Trace: {traceback.format_exc()}")
-            except Exception as e_gen_main: st.error(f"Unexpected error in main processing: {e_gen_main}"); st.error(f"Traceback: {traceback.format_exc()}")
-        else: st.error("⚠️ Missing required settings for allocation. Please ensure data is loaded and all sidebar settings (especially planning horizon and project selections) are correctly configured.")
+            except ValueError as e_val_run: st.error(f"Config/Allocation Error: {e_val_run}") # Renamed
+            except KeyError as e_key_run: st.error(f"Data Error (Missing Key): '{e_key_run}'. Trace: {traceback.format_exc()}") # Renamed
+            except Exception as e_gen_run: st.error(f"Unexpected error in main processing: {e_gen_run}"); st.error(f"Traceback: {traceback.format_exc()}") # Renamed
+        else: st.error("⚠️ Missing settings for allocation. Check sidebar (planning horizon, project selections).")
 
 # --- Footer ---
 st.markdown("---")
 try:
     zurich_tz = pytz.timezone('Europe/Zurich')
-    now_zurich = datetime.datetime.now(zurich_tz)
-    st.caption(f"Report generated: {now_zurich.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-except Exception:
-    now_local = datetime.datetime.now()
-    st.caption(f"Report generated: {now_local.strftime('%Y-%m-%d %H:%M:%S')} (Timezone: Server Local)")
+    st.caption(f"Report generated: {datetime.datetime.now(zurich_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}")
+except Exception: st.caption(f"Report generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} (Timezone: Server Local)")
