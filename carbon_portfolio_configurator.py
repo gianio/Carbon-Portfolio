@@ -9,76 +9,70 @@ import plotly.express as px
 import datetime # Import datetime for date check
 import pytz # For timezone handling
 import traceback # For detailed error logging
+import unicodedata # For Unicode normalization
 # import re # Only needed if using re.sub for more aggressive underscore replacement
 
 # ==================================
-# Refactored Data Loading Function (with enhanced debugging)
+# Refactored Data Loading Function (with aggressive normalization)
 # ==================================
 @st.cache_data
 def load_and_prepare_data_simplified(uploaded_file):
     """
     Loads data from an uploaded CSV file, prepares and validates it.
-    Handles potential UTF-8 BOM and provides detailed error diagnosis.
+    Includes aggressive Unicode NFKC normalization for column headers.
     """
     try:
-        # Added encoding='utf-8-sig' to handle potential BOM & skipinitialspace
         data = pd.read_csv(uploaded_file, encoding='utf-8-sig', skipinitialspace=True)
-        # Standardize column names: lowercase, strip whitespace, replace spaces with underscores
+        
         standardized_columns = []
         for col in data.columns:
             col_str = str(col)
-            processed_col = col_str.lower().strip() # Lowercase and strip first
-            processed_col = processed_col.replace(' ', '_') # Then replace spaces
-            # Example of more aggressive underscore replacement (optional):
+            # 1. Unicode Normalization (NFKC form)
+            normalized_col = unicodedata.normalize('NFKC', col_str)
+            # 2. Lowercase
+            lower_col = normalized_col.lower()
+            # 3. Strip leading/trailing whitespace (again, as normalization might change things)
+            stripped_col = lower_col.strip()
+            # 4. Replace internal spaces (now likely standard spaces) with underscores
+            final_col = stripped_col.replace(' ', '_')
+            # Optional: Consolidate multiple underscores if replace(' ', '_') could create them
             # import re
-            # processed_col = re.sub(r'_+', '_', processed_col) # Replace multiple underscores with one
-            standardized_columns.append(processed_col)
+            # final_col = re.sub(r'_+', '_', final_col) 
+            standardized_columns.append(final_col)
         data.columns = standardized_columns
+
     except Exception as read_error:
         return None, f"Error reading or initially processing CSV file: {read_error}. Ensure it's a valid CSV.", [], [], []
 
-    core_cols_std = ['project_name', 'project_type', 'priority']
+    core_cols_std = ['project_name', 'project_type', 'priority'] # These are already in a "clean" state
     
-    # Use a set for efficient and reliable membership checking
-    data_columns_set = set(data.columns)
+    data_columns_set = set(data.columns) # data.columns are now aggressively standardized
     missing_essential = [col for col in core_cols_std if col not in data_columns_set]
 
     if missing_essential:
-        # Prepare detailed debug information
-        debug_details_list = []
-        for core_col_item in core_cols_std:
-            is_present = core_col_item in data_columns_set
-            debug_details_list.append(
-                f"Essential column '{core_col_item}' (repr: {repr(core_col_item)}): "
-                f"{'Found' if is_present else 'NOT FOUND'}"
-            )
-        
         data_columns_repr_list = [repr(col_name) for col_name in data.columns]
+        core_cols_repr_list = [repr(col_name) for col_name in core_cols_std]
 
         err_msg = (
-            f"CSV missing essential columns after standardization. \n"
-            f"1. Expected standardized names: {core_cols_std}\n"
-            f"2. Standardized columns found in uploaded file (list of strings): {list(data.columns)}\n"
-            f"3. Representation (repr) of standardized columns found: {data_columns_repr_list}\n"
-            f"4. Set of standardized columns used for lookup: {data_columns_set}\n"
-            f"5. Essential columns NOT found by 'in set' check: {missing_essential}\n"
-            f"6. Detailed check for each essential column: \n   - " + "\n   - ".join(debug_details_list) + "\n"
-            f"Please meticulously check your CSV file's header row against these details. "
-            f"Pay attention to any subtle differences revealed by repr(), like hidden characters or unexpected whitespace variations."
+            f"CSV missing essential columns after thorough standardization (including Unicode NFKC normalization). \n"
+            f"1. Expected standardized names (should be plain ASCII): {core_cols_std}\n"
+            f"   Representation (repr) of expected names: {core_cols_repr_list}\n"
+            f"2. Thoroughly standardized columns found in uploaded file: {list(data.columns)}\n"
+            f"   Representation (repr) of these found columns: {data_columns_repr_list}\n"
+            f"3. Essential columns that were NOT found in the standardized list from data: {missing_essential}\n"
+            f"This indicates a persistent, unexpected mismatch. Please verify the CSV headers are simple, plain text (ideally ASCII/UTF-8) and comma-separated. "
+            f"If the 'repr' for an expected column and a found column look identical but are still mismatched, there might be a very subtle encoding or invisible character issue not fully resolved by NFKC, or an environment-specific string comparison problem."
         )
         return None, err_msg, [], [], []
 
-    # Identify available years and numeric columns
     available_years = set()
     year_data_cols_found_std = []
     numeric_prefixes_std = ['price_', 'available_volume_']
-    project_names_list_intermediate = [] # Define before potential early return
-
-    # Attempt to get project names even if year columns are missing, for better error context
-    if 'project_name' in data.columns:
+    project_names_list_intermediate = [] 
+    if 'project_name' in data.columns: # Check using the already standardized name
         try:
             project_names_list_intermediate = sorted(data['project_name'].astype(str).unique().tolist())
-        except Exception: # Fallback if astype(str) or unique fails
+        except Exception: 
              project_names_list_intermediate = []
 
 
@@ -97,12 +91,9 @@ def load_and_prepare_data_simplified(uploaded_file):
                     break 
 
     if not available_years:
-        # This error implies core columns were found, but no year data which is critical for the app.
         return None, "Core columns found, but no valid year columns (e.g., 'price_YYYY', 'available_volume_YYYY') were detected after processing headers. The application requires these year-specific columns to function.", [], project_names_list_intermediate, []
 
-
     available_years = sorted(list(available_years))
-
     data['priority'] = pd.to_numeric(data['priority'], errors='coerce').fillna(0)
 
     for year_val_proc in available_years:
@@ -118,7 +109,8 @@ def load_and_prepare_data_simplified(uploaded_file):
             data[volume_col_std_proc] = data[volume_col_std_proc].fillna(0).round().astype(int).clip(lower=0)
 
     invalid_types_found_list = []
-    data['project_type'] = data['project_type'].astype(str).str.lower().str.strip()
+    # project_type column existence is already guaranteed by core_cols_std check
+    data['project_type'] = data['project_type'].astype(str).str.lower().str.strip() # Already NFKC normalized, lowercased, stripped. This is redundant but harmless.
     valid_types = ['reduction', 'technical removal', 'natural removal']
     invalid_rows_mask = ~data['project_type'].isin(valid_types)
     if invalid_rows_mask.any():
@@ -130,7 +122,7 @@ def load_and_prepare_data_simplified(uploaded_file):
     cols_to_keep_std = core_cols_std[:]
     optional_cols_std = ['description', 'project_link']
     for col_opt in optional_cols_std:
-        if col_opt in data.columns:
+        if col_opt in data.columns: # data.columns are already fully standardized
             cols_to_keep_std.append(col_opt)
     cols_to_keep_std.extend([col_yr for col_yr in year_data_cols_found_std if col_yr in data.columns])
     
@@ -138,24 +130,24 @@ def load_and_prepare_data_simplified(uploaded_file):
     data = data[final_cols_to_keep].copy()
 
     rename_map_to_desired = {
-        'project_name': 'project name',
+        'project_name': 'project name', # Keys are clean, standardized names
         'project_type': 'project type',
         'priority': 'priority', 
         'description': 'Description',
         'project_link': 'Project Link'
     }
-    for year_col_std_rename in year_data_cols_found_std:
+    for year_col_std_rename in year_data_cols_found_std: # These are like 'price_2023'
         if year_col_std_rename in data.columns: 
-             rename_map_to_desired[year_col_std_rename] = year_col_std_rename.replace('_', ' ') 
+             rename_map_to_desired[year_col_std_rename] = year_col_std_rename.replace('_', ' ') # 'price_2023' -> 'price 2023'
 
     data.rename(columns=rename_map_to_desired, inplace=True)
 
-    # Final project_names_list from the processed and renamed data
     final_project_names_list = []
-    if 'project name' in data.columns: 
+    if 'project name' in data.columns: # Check the finally renamed column
         final_project_names_list = sorted(data['project name'].astype(str).unique().tolist())
 
-    return data, None, available_years, final_project_names_list, invalid_types_found_list
+    return data, None
+
 
 
 # ==================================
