@@ -380,7 +380,6 @@ with st.sidebar:
             except Exception as read_error: return None, f"Error reading CSV file: {read_error}", [], [], []
             core_cols_std = ['project_name', 'project_type', 'priority']; optional_cols_std = ['description', 'project_link']
             missing_essential = [col for col in core_cols_std if col not in data.columns]
-            if missing_essential: return None, f"CSV is missing essential columns: {', '.join(missing_essential)}", [], [], []
             numeric_prefixes_std = ['price_', 'available_volume_']; cols_to_convert_numeric = ['priority']; available_years = set(); year_data_cols_found = []
             for col in data.columns:
                 for prefix in numeric_prefixes_std:
