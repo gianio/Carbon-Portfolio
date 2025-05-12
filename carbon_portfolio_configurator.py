@@ -16,6 +16,7 @@ import traceback # For detailed error logging
 st.set_page_config(layout="wide")
 css = """
 <style>
+    /* ... (CSS from your previous version, ensure it's complete) ... */
     /* Main App background - uncomment if desired */
     /* .stApp { background-color: #F1F8E9; } */
 
@@ -98,6 +99,7 @@ default_color = '#BDBDBD'
 # ==================================
 # Allocation Function
 # ==================================
+# ... (Allocation function - assumed to be stable from previous version) ...
 def allocate_portfolio(
     project_data: pd.DataFrame, selected_project_names: list, selected_years: list,
     start_year_portfolio: int, end_year_portfolio: int, constraint_type: str, annual_targets: dict,
@@ -335,7 +337,7 @@ def add_margins_to_details_df(details_df: pd.DataFrame, project_master_data: pd.
         
     rows_with_margins = []
     if 'project name' not in project_master_data.columns:
-        st.error("DEBUG: 'project name' not in project_master_data for margin calculation.")
+        # st.error("DEBUG: 'project name' not in project_master_data for margin calculation.") # Commented out for now
         temp_df_error = details_df.copy()
         temp_df_error['margin_per_unit'], temp_df_error['margin'] = 0.0, 0.0
         return temp_df_error
@@ -389,29 +391,39 @@ with st.sidebar:
             optional_cols_std = ['description', 'project_link']
             margin_cols_std = ['base_price', 'threshold_price', 'margin_share', 'fixed_purchase_price', 'percental_margin_share']
 
+            # --- Explicit loop for missing_essential check with debug prints ---
             missing_essential = [] 
+            #st.sidebar.subheader("Debug: Essential Column Check") # Optional: uncomment for detailed debug
             for core_val_check in core_cols_std:
                 is_present_flag_check = False
                 for found_val_check in standardized_columns_found:
+                    # if 'project_name' in core_val_check: # Extremely verbose debug
+                    #    st.sidebar.text(f"Comparing (core) '{core_val_check}' (repr: {repr(core_val_check)}) == (found) '{found_val_check}' (repr: {repr(found_val_check)}) -> {core_val_check == found_val_check}")
                     if core_val_check == found_val_check: 
                         is_present_flag_check = True; break
-                if not is_present_flag_check: missing_essential.append(core_val_check)
+                if not is_present_flag_check:
+                    # st.sidebar.error(f"DEBUG: Core column '{core_val_check}' NOT found via '==' in standardized_columns_found.")
+                    missing_essential.append(core_val_check)
+                # else:
+                    # st.sidebar.info(f"DEBUG: Core column '{core_val_check}' IS found via '==' in standardized_columns_found.")
+            # st.sidebar.subheader("---")
+            # --- End explicit loop ---
 
             if missing_essential:
                 found_cols_str = ", ".join(standardized_columns_found)
                 return None, f"CSV missing essential: {', '.join(missing_essential)}. Expected after std. FOUND: [{found_cols_str}]. Check CSV headers & delimiter (';').", [], [], []
 
-            if 'treshold_price' in data.columns and 'threshold_price' not in data.columns:
+            if 'treshold_price' in data.columns and 'threshold_price' not in data.columns: # Handle typo
                 data.rename(columns={'treshold_price': 'threshold_price'}, inplace=True)
             
-            for m_col in margin_cols_std:
+            for m_col in margin_cols_std: # Ensure margin columns exist with NaN if not provided
                 if m_col not in data.columns: data[m_col] = np.nan
             
             numeric_prefixes_std = ['price_', 'available_volume_']
-            cols_to_convert_numeric = ['priority'] + margin_cols_std
+            cols_to_convert_numeric = ['priority'] + margin_cols_std # All expected numeric cols
             available_years_set, year_data_cols_found_list = set(), []
 
-            for col_scan in data.columns:
+            for col_scan in data.columns: # Iterate over current (standardized) columns
                 for prefix_scan in numeric_prefixes_std:
                     if col_scan.startswith(prefix_scan) and col_scan[len(prefix_scan):].isdigit():
                         cols_to_convert_numeric.append(col_scan); year_data_cols_found_list.append(col_scan)
@@ -419,49 +431,44 @@ with st.sidebar:
             
             if not available_years_set: st.sidebar.warning("No 'price_YYYY'/'volume_YYYY' columns found.")
 
-            for col_num_conv in list(set(cols_to_convert_numeric)):
+            for col_num_conv in list(set(cols_to_convert_numeric)): # Convert to numeric
                 if col_num_conv in data.columns: data[col_num_conv] = pd.to_numeric(data[col_num_conv], errors='coerce')
 
-            data['priority'] = data['priority'].fillna(0).clip(lower=0)
-            for m_col_proc in margin_cols_std:
-                 if m_col_proc in data.columns and m_col_proc in ['base_price', 'threshold_price', 'fixed_purchase_price']: data[m_col_proc] = data[m_col_proc].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan)
+            data['priority'] = data['priority'].fillna(0).clip(lower=0) # Clean priority
+            for m_col_proc in margin_cols_std: # Clean specific margin columns
+                 if m_col_proc in data.columns and m_col_proc in ['base_price', 'threshold_price', 'fixed_purchase_price']: 
+                     data[m_col_proc] = data[m_col_proc].apply(lambda x: x if pd.notna(x) and x >= 0 else np.nan)
 
-            for col_yr_proc in data.columns:
+            for col_yr_proc in data.columns: # Clean year-specific price/volume
                 if col_yr_proc.startswith('available_volume_') and col_yr_proc in year_data_cols_found_list: data[col_yr_proc] = data[col_yr_proc].fillna(0).apply(lambda x: max(0, int(x)) if pd.notna(x) else 0).clip(lower=0)
                 elif col_yr_proc.startswith('price_') and col_yr_proc in year_data_cols_found_list: data[col_yr_proc] = data[col_yr_proc].fillna(0.0).apply(lambda x: max(0.0, float(x)) if pd.notna(x) else 0.0).clip(lower=0)
             
             available_years_list = sorted(list(available_years_set))
             invalid_types_list = []
-            if 'project_type' in data.columns:
+            if 'project_type' in data.columns: # Clean project_type
                 data['project_type'] = data['project_type'].astype(str).str.lower().str.strip()
                 valid_types = ['reduction', 'technical removal', 'natural removal']
                 invalid_df = data[~data['project_type'].isin(valid_types)]
                 if not invalid_df.empty:
                     invalid_types_list = invalid_df['project_type'].unique().tolist()
-                    data = data[data['project_type'].isin(valid_types)].copy()
+                    data = data[data['project_type'].isin(valid_types)].copy() # Keep only valid
             
-            # Define all columns that are expected and should be kept if they exist
-            # These names are all standardized (e.g., 'project_name', 'price_2025')
             defined_cols_to_process = list(set(core_cols_std + margin_cols_std + optional_cols_std + year_data_cols_found_list))
-            # Filter `data` to only include columns that are in `defined_cols_to_process` AND currently exist in `data.columns`
-            # This ensures that only known, processed columns are passed forward.
             actual_cols_to_keep = [col for col in data.columns if col in defined_cols_to_process]
             data = data[actual_cols_to_keep]
-
 
             final_rename_map_dict = {'project_name': 'project name', 'project_type': 'project type', 'priority': 'priority', 
                                      'description': 'Description', 'project_link': 'Project Link', 
                                      'base_price': 'base price', 'threshold_price': 'threshold price', 
                                      'margin_share': 'margin share', 'fixed_purchase_price': 'fixed purchase price', 
                                      'percental_margin_share': 'percental margin share'}
-            for yr_col_map in year_data_cols_found_list: # These are standardized, e.g. price_2025
-                final_rename_map_dict[yr_col_map] = yr_col_map.replace('_', ' ') # price_2025 -> price 2025
+            for yr_col_map in year_data_cols_found_list:
+                final_rename_map_dict[yr_col_map] = yr_col_map.replace('_', ' ')
             
-            # Apply renaming only for columns that exist in `data` (which has standardized names now)
             actual_rename_map = {k_std: v_disp for k_std, v_disp in final_rename_map_dict.items() if k_std in data.columns}
             data.rename(columns=actual_rename_map, inplace=True)
 
-            project_names_output = sorted(data['project name'].unique().tolist()) if 'project name' in data.columns else [] # Use display name
+            project_names_output = sorted(data['project name'].unique().tolist()) if 'project name' in data.columns else []
             return data, None, available_years_list, project_names_output, invalid_types_list
 
         try: # Calling load_and_prepare_data
@@ -475,10 +482,11 @@ with st.sidebar:
                 st.session_state.selected_projects = valid_sel if valid_sel or not proj_names else proj_names
         except Exception as e: st.sidebar.error(f"File processing error: {e}"); st.sidebar.error(f"Traceback: {traceback.format_exc()}"); st.session_state.update({'data_loaded_successfully': False, 'working_data_full': None})
 
+    # Sidebar UI for settings
     if st.session_state.get('data_loaded_successfully', False):
         data_ui, years_ui, names_ui = st.session_state.working_data_full, st.session_state.available_years_in_data, st.session_state.project_names
         if not years_ui: st.sidebar.warning("No usable year data. Settings disabled.")
-        else:
+        else: # Sidebar Settings UI (largely unchanged from previous version, ensure variables are correctly scoped)
             st.markdown("## 2. Portfolio Settings")
             min_yr_sb, max_yr_sb = min(years_ui), max(years_ui)
             max_yrs_plan_sb = max(1, max_yr_sb - min_yr_sb + 1)
@@ -724,33 +732,30 @@ if st.session_state.get('data_loaded_successfully', False):
                             
                             # --- MODIFIED SECTION WITH MORE ROBUST ERROR HANDLING FOR .xs ---
                             if not pivot_display_run.empty:
-                                # Proactively create 'Total Margin' column, initialized to 0.0
-                                pivot_display_run['Total Margin'] = 0.0
+                                pivot_display_run['Total Margin'] = 0.0 # Proactively create and initialize
                                 try:
-                                    # Attempt to set column level names robustly
                                     if isinstance(pivot_display_run.columns, pd.MultiIndex) and pivot_display_run.columns.nlevels == 2:
                                         pivot_display_run.columns.names = ['year', 'metric']
                                     
                                     has_margin_metric_and_level = False
                                     if isinstance(pivot_display_run.columns, pd.MultiIndex) and \
-                                       'metric' in pivot_display_run.columns.names: # Check level name exists
-                                        # Check if 'margin' is actually a value in the 'metric' level
-                                        if 'margin' in pivot_display_run.columns.get_level_values('metric'):
-                                            has_margin_metric_and_level = True
+                                       'metric' in pivot_display_run.columns.names and \
+                                       'margin' in pivot_display_run.columns.get_level_values('metric'):
+                                        has_margin_metric_and_level = True
                                     
                                     if has_margin_metric_and_level:
                                         margin_sum = pivot_display_run.xs('margin', axis=1, level='metric').sum(axis=1)
                                         pivot_display_run['Total Margin'] = margin_sum
-                                    else:
-                                        st.info("Detailed Table: 'margin' data or expected column structure not found for 'Total Margin' sum. Values set to 0.")
-                                        # 'Total Margin' column already exists and is 0.0, so no action needed here.
-                                
+                                    # If not has_margin_metric_and_level, 'Total Margin' remains 0.0 as initialized
+                                    elif isinstance(pivot_display_run.columns, pd.MultiIndex) and 'metric' not in pivot_display_run.columns.names:
+                                         st.warning("Detailed Table: Column level 'metric' not found. 'Total Margin' set to 0.")
+                                    elif isinstance(pivot_display_run.columns, pd.MultiIndex) and 'metric' in pivot_display_run.columns.names and 'margin' not in pivot_display_run.columns.get_level_values('metric'):
+                                         st.info("Detailed Table: 'margin' data not present in 'metric' level. 'Total Margin' set to 0.")
+
                                 except KeyError as e_xs: 
-                                    st.warning(f"Could not calculate 'Total Margin' for detailed table due to KeyError ('{e_xs}', likely level 'metric' not found). Setting to 0.")
-                                    # 'Total Margin' column already exists and is 0.0
+                                    st.warning(f"Could not calculate 'Total Margin' (KeyError: {e_xs}). Setting to 0.")
                                 except Exception as e_general_margin_calc:
-                                    st.error(f"An unexpected error occurred while calculating 'Total Margin' for detailed table: {e_general_margin_calc}")
-                                    # 'Total Margin' column already exists and is 0.0
+                                    st.error(f"Unexpected error calculating 'Total Margin': {e_general_margin_calc}")
                                 
                                 pivot_display_run = pivot_display_run.fillna(0)
                                 formatter_run = {}
